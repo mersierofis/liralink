@@ -11,8 +11,7 @@
 3. Connect a testnet wallet (Freighter) holding testnet USDC from faucet.circle.com and pay.
 4. Watch the link flip to **Paid** on the merchant panel and the settlement reach the IBAN.
 
-Demo login (intentional, for judges): `demo@liralink.app` / `DEMO_PASSWORD`
-TODO: rotate before publishing.
+Demo login (intentional, for judges): `demo@liralink.app` / `RiseInStellar33`
 
 ## Demo video
 
@@ -32,8 +31,9 @@ is paid out to the merchant's IBAN. The merchant never touches crypto. **Testnet
 |---|---|
 | Merchant panel | TODO |
 | Payer page | TODO |
-| API docs (Swagger) | TODO |
-| API health | TODO |
+| API | https://liralink2-api.tutorialplatform.com/api |
+| API docs (Swagger) | https://liralink2-api.tutorialplatform.com/docs |
+| API health | https://liralink2-api.tutorialplatform.com/api/health |
 
 ## Contract ID
 
