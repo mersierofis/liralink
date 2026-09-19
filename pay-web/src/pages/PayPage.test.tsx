@@ -20,7 +20,7 @@ vi.mock('@/stellar/useWallet', () => ({
   }),
 }))
 
-vi.mock('@/privy/PrivyGate', () => ({
+vi.mock('@/privy/enabled', () => ({
   isPrivyEnabled: () => false,
 }))
 
