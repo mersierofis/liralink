@@ -76,6 +76,10 @@ Diagram and Soroban storage/auth patterns: [`architecture.md`](architecture.md).
     `shortfallUSDC` track progress.
   - `received > quotedUSDC` → `paid`; the excess is credited to `merchant.unallocatedUSDC`, visible
     in the panel and never auto-converted to TRY.
+  - A payment that arrives for a link that is not payable (`paid`, `expired`, `cancelled`), for a
+    code no link has, or with a memo that is no link code is **never silently dropped**: it creates
+    a `PaymentAttempt` row with the reason (`link_not_open` | `link_not_found` | `unmatched_memo`)
+    and credits `merchant.unallocatedUSDC`.
 
 **Repository layout (monorepo):**
 ```
@@ -198,6 +202,18 @@ interface PayQuote {               // what the payer page renders
   network: 'testnet';
   payment?: Payment;
   payments: Payment[];
+}
+
+type PaymentAttemptReason = 'link_not_open' | 'link_not_found' | 'unmatched_memo';
+
+interface PaymentAttempt {         // a USDC payment that matched no payable link — never dropped (see §4)
+  id: string;
+  linkCode: string | null;        // null when the memo is not a link code
+  merchantId: string | null;      // null when no link, hence no merchant, matched
+  txHash: string;
+  amountUSDC: string;             // 7 dp
+  reason: PaymentAttemptReason;
+  createdAt: string;
 }
 
 interface UnallocatedCredit {

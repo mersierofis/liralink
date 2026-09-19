@@ -5,11 +5,15 @@
 // merchant-web and pay-web commit a byte-identical copy. Types only: no runtime code, no imports.
 //
 // Rules:
-// - All money fields are decimal STRINGS, never numbers. TRY has 2 dp, USDC has 7 dp. The unit is
-//   in the field name: amountTRY, quotedUSDC, receivedUSDC, netTRY, feeUSDC, ...
+// - All money fields are decimal STRINGS, never numbers. TRY has 2 dp, USDC has 7 dp, always
+//   written out in full, zero included ("0.0000000"). The unit is in the field name: amountTRY,
+//   quotedUSDC, receivedUSDC, netTRY, feeUSDC, ...
 // - All timestamps are ISO 8601 strings in UTC. (JWT `iat`/`exp` are the one exception: JWT
 //   NumericDate, seconds since the epoch.)
-// - IBANs appear only masked in responses. Requests carry the full IBAN, ^TR\d{24}$, no spaces.
+// - IBAN visibility: a merchant sees their own IBAN in full, nobody else sees it at all. Only the
+//   merchant's own profile (`Merchant`: GET/PATCH /me, register, login) carries the full IBAN.
+//   Every other response and every log line carries it masked (`MaskedIban`), and nothing the
+//   payer can see carries it at all. Requests carry the full IBAN, ^TR\d{24}$, no spaces.
 // - Base path `/api`. All bodies are JSON. Merchant endpoints need `Authorization: Bearer <jwt>`;
 //   payer (`/pay/...`) and system endpoints are public.
 // - Every non-2xx response body is an `ApiError`.
@@ -23,7 +27,7 @@
 
 /** Decimal string, 2 dp, e.g. "5000.00". */
 export type DecimalTRY = string;
-/** Decimal string, 7 dp, e.g. "147.0588235". */
+/** Decimal string, always 7 dp, zero included: "147.0588235", "0.0000000". */
 export type DecimalUSDC = string;
 /** TRY per 1 USDC, decimal string. */
 export type FxRate = string; // OPEN: precision not fixed in 00-PROJECT.md (anchor.md: anchor rates rounded down to 6 dp)
@@ -35,9 +39,13 @@ export type StellarAccountId = string;
 export type StellarContractId = string;
 /** 64-hex Stellar transaction hash. */
 export type TxHash = string;
-/** Masked IBAN as returned by the API. */
-export type MaskedIban = string; // OPEN: mask format not specified; README/anchor.md prose uses "TR33 **** **** **** **** **26"
-/** Full IBAN as sent in requests: ^TR\d{24}$. */
+/**
+ * Masked IBAN, exactly this shape: "TR33 **** **** **** **** **26". The first 4 and the last 2
+ * characters of the IBAN are visible, everything between is the fixed mask
+ * "**** **** **** **** **" — the mask does not preserve the IBAN's length.
+ */
+export type MaskedIban = string;
+/** Full IBAN: ^TR\d{24}$. In requests, and in the merchant's own profile only. */
 export type Iban = string;
 
 // ---------------------------------------------------------------------------------------------
@@ -68,7 +76,7 @@ export type FxSource = 'mock' | 'live' | 'anchor';
  */
 export interface ApiError {
   statusCode: number;
-  message: string; // OPEN: NestJS ValidationPipe returns string[] for 400s; 00-PROJECT.md says string
+  message: string | string[];      // string[] for 400 validation errors (one entry per failed rule)
   error?: string;
 }
 
@@ -103,11 +111,12 @@ export type InvoiceContractError =
 // Domain entities
 // ---------------------------------------------------------------------------------------------
 
+/** The merchant's own profile. Only ever returned to that merchant. */
 export interface Merchant {
   id: string;
   email: string;
   businessName: string;
-  iban?: MaskedIban;               // OPEN: 00-PROJECT.md §5 types this as the full ^TR\d{24}$ and merchant-web prefills withdrawals from it; masking breaks that prefill
+  iban?: Iban;                     // full — the merchant's own IBAN (merchant-web prefills withdrawals from it)
   autoSavePercent: number;         // 0–50, default 0 — share of each payment kept in USDC
   unallocatedUSDC: DecimalUSDC;    // overpaid excess + stray payments, minus non-failed USDC withdrawals from it
   settlementMode: SettlementMode;  // derived from ANCHOR_PROVIDER
@@ -136,7 +145,7 @@ export interface PaymentLink {
   status: LinkStatus;
   expiresAt: IsoTimestamp;         // default +24 h
   payUrl: string;                  // PAY_WEB_BASE_URL + '/' + code
-  receivedUSDC: DecimalUSDC;       // cumulative USDC matched so far. OPEN: doc says "0" until the first payment, which is not 7 dp ("0.0000000")
+  receivedUSDC: DecimalUSDC;       // cumulative USDC matched so far, "0.0000000" until the first payment
   shortfallUSDC?: DecimalUSDC;     // only while status is 'underpaid'
   payment?: Payment;               // latest transfer — alias for payments.at(-1)
   payments: Payment[];             // every transfer that credited this link, oldest → newest
@@ -146,9 +155,6 @@ export interface PaymentLink {
 
 // OPEN: no Payment status is documented. A Payment row exists only once a transfer has credited
 // a link (01-BACKEND.md: "one row per successful transfer"), so there is no status union to type.
-// OPEN: no PaymentAttempt entity is documented in 00-PROJECT.md. The closest concepts are the
-// x402 pending response (`x402SettlementId`, see GetPayAgentPendingResponse) and the
-// POST /pay/:code/submitted hint; neither is a stored, API-visible attempt. Not typed here.
 export interface Payment {
   id: string;
   linkId: string;
@@ -161,6 +167,27 @@ export interface Payment {
   detectedAt: IsoTimestamp;
 }
 
+export type PaymentAttemptReason =
+  | 'link_not_open'    // the memo names a link that is paid, expired or cancelled
+  | 'link_not_found'   // the memo is shaped like a link code, but no link has that code
+  | 'unmatched_memo';  // no memo, or a memo that is not a link code
+
+/**
+ * A USDC payment to the platform account that did not become a `Payment` because it matched no
+ * payable link. Never silently dropped: it creates a PaymentAttempt row and credits
+ * `merchant.unallocatedUSDC`.
+ * Design decision (2026-09-19), described in 00-PROJECT.md §4 and §5.
+ */
+export interface PaymentAttempt {
+  id: string;
+  linkCode: string | null;         // null when the memo is not a link code
+  merchantId: string | null;       // null when no link, hence no merchant, matched. OPEN: whose unallocatedUSDC is credited when this is null is not decided
+  txHash: TxHash;
+  amountUSDC: DecimalUSDC;
+  reason: PaymentAttemptReason;
+  createdAt: IsoTimestamp;
+}
+
 export interface Settlement {
   id: string;
   merchantId: string;
@@ -169,7 +196,7 @@ export interface Settlement {
   amountTRY: DecimalTRY;           // gross: link.amountTRY × (100 − autoSavePercent)%
   fxRate: FxRate;                  // = link.fxRate
   savedUSDC: DecimalUSDC;          // auto-save portion kept in USDC
-  feeUSDC: DecimalUSDC | null;     // anchor fee in USDC — null until completed; "0" when the anchor charges in TRY (anchor.md)
+  feeUSDC: DecimalUSDC | null;     // anchor fee in USDC — null until completed; "0.0000000" when the anchor charges in TRY (anchor.md)
   netTRY: DecimalTRY | null;       // TRY credited (balance) or paid to the IBAN (auto_payout) — null until completed
   provider: AnchorProvider;        // the provider it was created with; it always continues on it
   status: SettleStatus;
@@ -186,7 +213,7 @@ export interface Withdrawal {
   id: string;
   merchantId: string;
   amountTRY: DecimalTRY;
-  iban: MaskedIban;                // OPEN: 00-PROJECT.md §5 has a plain `iban: string`; masked here per the file rules
+  iban: MaskedIban;                // masked in every response; the request carries the full IBAN
   status: WdStatus;
   anchorRef?: string;
   createdAt: IsoTimestamp;
@@ -232,10 +259,10 @@ export interface PayQuote {
   shortfallUSDC?: DecimalUSDC;     // only while status is 'underpaid'
   rails: {
     contract?: { contractId: StellarContractId; invoiceCode: string }; // present while the link is on-chain
-    memo?: { destination: StellarAccountId; memo: string };            // always present. OPEN: typed optional in 00-PROJECT.md although documented as always present
+    memo: { destination: StellarAccountId; memo: string };             // always present
   };
   asset: { code: 'USDC'; issuer: StellarAccountId };
-  network: 'testnet';
+  network: 'testnet';              // LiraLink's own name for the network; x402 fields use the x402 spec's 'stellar:testnet'
   payment?: Payment;
   payments: Payment[];
 }
@@ -257,8 +284,8 @@ export interface UnallocatedCredit {
 
 /** Query for every list endpoint. Lists are newest first. */
 export interface PageQuery {
-  page?: number;                   // OPEN: 0- or 1-based, default and maximum `limit` not documented
-  limit?: number;
+  page?: number;                   // 1-based, default 1
+  limit?: number;                  // default 20, max 100
 }
 
 export interface Paginated<T> {
@@ -457,7 +484,7 @@ export interface GetPayAgentResponse {
   code: string;
   linkStatus: LinkStatus;
   rail: 'x402';
-  network: string;                 // OPEN: literal not documented ('stellar:testnet' per the x402 section, vs PayQuote.network 'testnet')
+  network: 'stellar:testnet';      // x402 fields use the x402 spec's network id; PayQuote.network is LiraLink's own 'testnet'
   facilitator: string;             // OPEN: URL or name not documented
   credit: unknown;                 // OPEN: shape not documented
   reason?: string;                 // OPEN: meaning and values not documented
@@ -470,7 +497,7 @@ export interface GetPayAgentPendingResponse {
   status: 'pending';
   x402SettlementId: string;
   rail: 'x402';
-  network: string;                 // OPEN: same as GetPayAgentResponse.network
+  network: 'stellar:testnet';      // x402 spec id, see GetPayAgentResponse.network
   facilitator: string;             // OPEN: same as GetPayAgentResponse.facilitator
 }
 
