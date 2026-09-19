@@ -1,6 +1,6 @@
 # LiraLink
 
-**Sell in lira, get paid in USDC from abroad, receive lira on your IBAN — a Stellar payment link for Turkish merchants.**
+**Your customer abroad pays in USDC. You get lira in your IBAN.**
 
 ## Try it in 3 minutes
 
@@ -77,12 +77,20 @@ date) and switch these citations to the in-repo paths.
 
 ## Regulatory note
 
-The payer is **outside Turkey** and pays in USDC from their own wallet. The merchant only ever sells
-in and receives **Turkish lira**. Conversion runs through a **Stellar anchor**, the regulated party
-in the flow, so Turkish rules restricting crypto as a *domestic* payment instrument do not apply to
-this flow. Custody is a documented hackathon simplification (one platform account, merchant balances
-as ledger rows). This is our engineering framing, **not legal advice**; a formal legal opinion comes
-before any production launch.
+We target cross-border collection precisely because the domestic use of crypto
+as a payment instrument is restricted in Turkey: the payer is outside Turkey,
+the merchant only ever prices and receives Turkish lira, and the licensed
+anchor is the regulated party performing the conversion. We do not claim this
+flow is cleared under Turkish payment regulation. That is a question for
+counsel, and a formal legal opinion is a prerequisite before any production
+launch. This is engineering framing, not legal advice.
+
+### Custody
+
+This hackathon build is **custodial**. The platform's Stellar account receives the payer's USDC,
+and each merchant's balance is a row in LiraLink's ledger, not an on-chain account of their own.
+This is a deliberate simplification for the event. Non-custodial settlement, where the payer pays
+the anchor directly and the platform never holds funds, is on the roadmap.
 
 ## Timeline
 
