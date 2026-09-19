@@ -116,6 +116,7 @@ function makePaidLink(opts: {
 
 function makeOpenLink(opts: { code: string; title: string; amountTRY: string; daysAgo: number }): PaymentLink {
   const quotedUSDC = quoteUSDC(opts.amountTRY)
+  const expiresAt = new Date(Date.now() + 24 * 3_600_000).toISOString()
   return {
     id: `link-${opts.code}`,
     code: opts.code,
@@ -127,9 +128,9 @@ function makeOpenLink(opts: { code: string; title: string; amountTRY: string; da
     fxRate: FX_RATE,
     fxRateAt: isoDaysAgo(opts.daysAgo),
     fxSpread: '0.0000000',
-    quoteExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    quoteExpiresAt: expiresAt, // never re-quoted: quoteExpiresAt === expiresAt
     status: 'open',
-    expiresAt: new Date(Date.now() + 24 * 3_600_000).toISOString(),
+    expiresAt,
     payUrl: `${PAY_WEB_BASE}/${opts.code}`,
     receivedUSDC: '0',
     payments: [],
