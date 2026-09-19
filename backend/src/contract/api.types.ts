@@ -106,9 +106,11 @@ export type SettleFailReason =
  * settlement row as `blockedReason`, never exposed by the API (see Settlement).
  */
 export type AnchorBlockedReason =
-  | 'missing_iban'             // merchant has no IBAN, or the anchor rejected it over SEP-12
-  | 'outside_anchor_limits'    // amount outside /info min/max, or an amount-shaped anchor 4xx
-  | 'anchor_withdraw_disabled'; // /info shows USDC withdraw disabled
+  | 'missing_iban'                     // merchant has no IBAN, or the anchor rejected it over SEP-12
+  | 'outside_anchor_limits'            // the anchor answered the withdraw with an amount-shaped 4xx (/info limits are not trusted)
+  | 'anchor_withdraw_disabled'         // the anchor says USDC withdraw is disabled
+  | 'pending_customer_info_update'     // anchor status: waiting for more customer (KYC) info; still in progress
+  | 'pending_transaction_info_update'; // anchor status: waiting for more transaction info; still in progress
 
 /** Why a USDC withdrawal failed; the amount is returned to its `source`. */
 export type UsdcWdFailReason = 'failed_on_ledger' | 'expired_unsubmitted';

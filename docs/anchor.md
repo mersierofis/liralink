@@ -42,11 +42,12 @@ One settlement = one SEP-6 **withdrawal** of `settlement.amountUSDC`.
    `KYC_SERVER`, `ANCHOR_QUOTE_SERVER`. Refuse an anchor whose `NETWORK_PASSPHRASE` differs from
    ours. 100 KB cap, no redirects, 20 s timeout. Re-read hourly; a rotated `SIGNING_KEY` drops
    every cached JWT.
-2. **Pre-checks — nothing is opened if these fail.** The merchant has an IBAN, and
-   `GET {TRANSFER_SERVER}/info` (unauthenticated) shows `withdraw.USDC.enabled` with the amount
-   inside `min_amount`/`max_amount`. Otherwise the settlement stays `pending` with a
-   `blockedReason` — `missing_iban` | `outside_anchor_limits` | `anchor_withdraw_disabled` — and the
-   minute job retries.
+2. **Pre-check — nothing is opened if it fails.** The merchant has an IBAN; otherwise the settlement
+   stays `pending` with `blockedReason` `missing_iban` and the minute job retries (it goes on by
+   itself once the IBAN is saved). **`/info` limits are not used**: they are wrong in both
+   directions on this anchor (see *Observed*), so the anchor's own answer to the withdraw decides —
+   an amount-shaped 4xx blocks with `outside_anchor_limits`, a "disabled" answer with
+   `anchor_withdraw_disabled`. `blockedReason` is internal and never exposed by the API.
 3. **SEP-10 auth, one anchor user per merchant.** Every merchant's USDC sits in one platform
    account, so the adapter logs in with SEP-10 **memos**:
    `GET {WEB_AUTH_ENDPOINT}?account=<platform>&memo=<merchant memo>&home_domain=…`. The anchor then
@@ -63,16 +64,18 @@ One settlement = one SEP-6 **withdrawal** of `settlement.amountUSDC`.
    - One JWT cached per merchant until a minute before `exp`; a `401/403` evicts it.
 4. **SEP-12: register the payout IBAN.** Without it this anchor pays a sandbox default account,
    not the merchant. On the first withdrawal — and whenever `merchant.iban` or the home domain
-   differs from what was registered — `PUT {KYC_SERVER}/customer { "bank_account_number": <IBAN> }`
-   with the merchant's JWT → `{ id }`, stored with the IBAN and domain it was registered for. When
+   differs from what was registered — `PUT {KYC_SERVER}/customer` with `bank_account_number=<IBAN>`
+   as `multipart/form-data` (JSON is accepted too; never a query parameter — it is PII) and the
+   merchant's JWT → `202 { id }`, stored with the IBAN and domain it was registered for. When
    all three match, one `GET {KYC_SERVER}/customer` confirms the customer is still `ACCEPTED`; after
    a sandbox reset (`NEEDS_INFO`, or another id) it registers again. A `400` (the anchor validates a
    Turkish mod-97 IBAN) blocks with `missing_iban`.
 5. **Open the withdrawal.** `GET {TRANSFER_SERVER}/withdraw?asset_code=USDC&asset_issuer=…&funding_method=bank_account&amount=…&account=<platform>`
    with the merchant's JWT → `{ id, account_id, memo, memo_type }`. Store `anchorRef` **and
    `anchorMemo`** — the anchor scopes transactions to the JWT `sub`, so only that merchant's identity
-   can see it. `funding_method` replaces the deprecated `type`. It is a GET with query params, so no
-   body-encoding question arises. The IBAN is **not** sent as `dest`: it would put PII in a query
+   can see it. `funding_method` replaces the deprecated `type`. It is a **GET** with query params:
+   `POST /sep6/withdraw` answers `404 "No route for POST /sep6/withdraw"` for both multipart and
+   JSON (probed 2026-09-19) — the multipart-only rule belongs to testanchor's SEP-24, not here. The IBAN is **not** sent as `dest`: it would put PII in a query
    string, and this anchor ignores it (see *Observed*). An amount-shaped 4xx (naming a minimum or
    maximum) blocks with `outside_anchor_limits` rather than counting as transient.
 6. **Send the USDC.** Status is `pending_user_transfer_start` immediately. Check that `amount_in`
@@ -86,7 +89,9 @@ One settlement = one SEP-6 **withdrawal** of `settlement.amountUSDC`.
    the merchant's IBAN the settlement still completes — the money already moved — but an ERROR is
    logged for manual reconciliation. `error` / `expired` / `refunded` / `no_market` / `too_small` /
    `too_large` → `failed` / `anchor_status`. `incomplete` has no meaning in SEP-6 and is treated as
-   one more pending state.
+   one more pending state. `pending_customer_info_update` / `pending_transaction_info_update` are
+   **in progress**, not failures: the settlement stays `processing` with the status recorded as its
+   (internal) `blockedReason`, cleared as soon as the anchor moves on.
 
 ### Double-spend guard (SEP-6 and SEP-24)
 
@@ -187,8 +192,9 @@ The adapter follows what the anchor **does**, not what its docs say. Measured on
 | Topic | Documented | Observed | Design response |
 |---|---|---|---|
 | Fee asset | SEP-38: fee in the sell asset (USDC); `/info` `fee_percent: 0.5` | `amount_fee 0.25 iso4217:TRY`; `amount_out` already net | `netTRY = amount_out`, `feeUSDC = 0`. A SEP-24-style fee path would have wrongly failed the settlement |
-| Withdraw minimum | Skill and hackathon docs: 1 USDC | `/info` advertises `min_amount: 0.5`, but 0.7 is rejected with `400 Minimum off-ramp is 1.0000000 USDC` | Enforce `/info` **and** map an amount 4xx to `outside_anchor_limits` — that catches the 0.5–1.0 band |
-| Withdraw maximum | `/info`: `max_amount: 300` | 301 USDC accepted | Enforce the advertised 300 anyway |
+| Withdraw minimum | Skill and hackathon docs: 1 USDC | `/info` advertises `min_amount: 0.5`, but 0.7 is rejected with `400 {"error":"Minimum off-ramp is 1.0000000 USDC"}` | Don't pre-check `/info`; map the amount 4xx to `outside_anchor_limits` (settlement stays `pending`, never failed) |
+| Withdraw maximum | `/info`: `max_amount: 300` | 301 USDC accepted; **5000 USDC accepted** (2026-09-19) | Don't enforce `/info`: it would block links the anchor takes |
+| Withdraw method | SEP-6: `GET /withdraw` | `GET` works; `POST` (multipart or JSON) → `404 No route for POST /sep6/withdraw` | `GET` with query params only |
 | Payout IBAN | SEP-6: `dest` is where the fiat goes | `dest` ignored; the SEP-12-registered IBAN is used, else a sandbox default IBAN | Register the IBAN over SEP-12 per merchant; don't send `dest`; check `to` on completion |
 | User identity | Skill examples: bare `?account=G…` | Memos supported (`sub` `G…:memo`); transactions scoped per `sub` — a withdrawal opened as memo A is `404` for memo B and for the bare account. Memo logins work on an account that already logged in without one | One anchor user per merchant; `anchorMemo` stored per settlement |
 | `type` param | `type=bank_account` | Deprecated; `funding_method=bank_account` accepted | Use `funding_method` |
@@ -211,6 +217,11 @@ Other observations:
   Transaction ids look like `sep_…`.
 - Statuses: `pending_user_transfer_start → pending_anchor → completed` (no `incomplete`).
 - The payout is simulated — no bank is credited — but the routing to the registered IBAN is real.
+- Settled by the backend on 2026-09-19 (auto-payout, one merchant customer, memo
+  `694412119771947729`): `sep_hd4wlhxdlkxvtrr8oi6e` and `sep_4cxe5ql3frhjcb5w3u5g` (1.0300783 USDC →
+  `amount_out 50.00 iso4217:TRY`, `amount_fee 0.25 iso4217:TRY`) and `sep_cyj71h8omo6xisfs95ow`
+  (1.5451175 → 75.00 TRY, fee 0.37 TRY), each paid to the SEP-12-registered IBAN. With
+  `FX_PROVIDER=anchor` the payout equals the link's TRY: the spread is already in the locked rate.
 - A verified settlement: 1.0328445 USDC in → 50.00 TRY out (0.25 TRY fee) to the merchant's IBAN
   `TR33 **** **** **** **** **** 26`, with a bank reference on the completed transaction; payment
   [`440149f4…`](https://stellar.expert/explorer/testnet/tx/440149f4ac9cf07de9de10cb25f32c3fd5e4b766ed149f6a789715aac6e6269d)
@@ -262,9 +273,10 @@ returns `409`. Because the bucket follows the provider a settlement was created 
   with a firm SEP-38 `quote_id`. Plain `/withdraw` + indicative `/price` means a link paid hours
   later settles at that moment's rate and `netTRY` can differ from `amountTRY` (in either direction;
   nothing caps it). Quotes live ~15 min while links live up to 24 h.
-- **SEP-6-only statuses** `pending_customer_info_update` / `pending_transaction_info_update` are not
-  handled (no `PATCH /transactions/{id}`). Unreachable on this anchor (KYC auto-approved); a blocker
-  for a real one.
+- **SEP-6-only statuses** `pending_customer_info_update` / `pending_transaction_info_update` are
+  counted as in progress and recorded in `blockedReason`, but nothing supplies the missing info (no
+  `PATCH /transactions/{id}`, no SEP-12 fields beyond the IBAN). Unreachable on this anchor (KYC
+  auto-approved); a real one would wait forever.
 - **`customer_id`** should be passed on `/withdraw`; today the anchor infers it from the JWT `sub`.
 - **`/info` `fields`** are not modelled, so an anchor that requires an extra field gets a 400 or a
   stall instead of a clean block.

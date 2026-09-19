@@ -4,5 +4,5 @@
   // nothing, leaving no dist/ at all on every second build.
   "compilerOptions": { "rootDir": "./src", "incremental": false },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts", "**/*.testing.ts"]
 }
