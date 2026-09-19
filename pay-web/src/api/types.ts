@@ -191,6 +191,11 @@ export interface PaymentAttempt {
   txHash: TxHash;
   amount: string;                  // decimal string, 7 dp (every Stellar asset has 7), in units of `assetCode` — the one money field without a unit suffix, because the asset varies
   assetCode: string;               // e.g. 'USDC', 'XLM'
+  // Issuer account of the asset sent; null for XLM (native). The backend accepts USDC by issuer,
+  // not by code: anyone can issue a token called 'USDC', so only USDC_ISSUER (Circle) counts. A
+  // wrong_asset row with assetCode 'USDC' and a non-Circle issuer is exactly the spoof this guards
+  // against.
+  assetIssuer: StellarAccountId | null;
   reason: PaymentAttemptReason;
   createdAt: IsoTimestamp;
 }
