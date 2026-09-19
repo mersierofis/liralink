@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -156,7 +157,13 @@ export function CreateLinkDialog({ onCreated }: { onCreated: (link: PaymentLink)
               )}
             />
             <DialogFooter>
+              {createLink.isPending && (
+                <p className="mr-auto self-center text-xs text-muted-foreground">
+                  Registering the link on-chain — this can take up to ~10 seconds.
+                </p>
+              )}
               <Button type="submit" disabled={createLink.isPending}>
+                {createLink.isPending && <Loader2 className="animate-spin" />}
                 {createLink.isPending ? 'Creating…' : 'Create link'}
               </Button>
             </DialogFooter>

@@ -111,6 +111,19 @@ export function useCancelLink() {
   })
 }
 
+/** Retry the best-effort Soroban invoice creation when a link came back with `onchain: null`
+ * (POST /links/:id/onchain, 04-BACKEND-HANDOFF.md §1/§3). Can take ~5–10 s (waits for the tx). */
+export function useRetryOnchain() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiRequest<PaymentLink>(`/links/${id}/onchain`, { method: 'POST' }),
+    onSuccess: (link) => {
+      queryClient.setQueryData(['links', link.id], link)
+      queryClient.invalidateQueries({ queryKey: ['links'] })
+    },
+  })
+}
+
 export function useBalance() {
   return useQuery({
     queryKey: ['balance'],

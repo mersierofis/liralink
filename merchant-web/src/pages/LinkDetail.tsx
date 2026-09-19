@@ -2,7 +2,9 @@ import { useEffect, useRef } from 'react'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
+import { Decimal } from 'decimal.js'
 import { toast } from 'sonner'
+import { RetryOnchainButton } from '@/components/RetryOnchainButton'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -100,6 +102,14 @@ export default function LinkDetailPage() {
           </div>
           {link.description && <p className="mt-1 text-muted-foreground">{link.description}</p>}
           <p className="mt-1 font-mono text-xs text-muted-foreground">{link.code}</p>
+          {link.onchain === null && link.status === 'open' && new Decimal(link.receivedUSDC).isZero() && (
+            <div className="mt-3 space-y-1">
+              <p className="text-xs text-muted-foreground">
+                Not registered on-chain — payers can only use the classic memo payment for this link.
+              </p>
+              <RetryOnchainButton linkId={link.id} />
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {isMock && link.status === 'open' && (

@@ -120,6 +120,15 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json(link)
   }),
 
+  http.post('*/api/links/:id/onchain', ({ request, params }) => {
+    const authError = requireAuth(request)
+    if (authError) return authError
+    const link = state.links.find((l) => l.id === params.id)
+    if (!link) return error(404, 'Link not found')
+    link.onchain = { contractId: 'CMOCKCONTRACT', invoiceCode: link.code, deadlineLedger: 0 }
+    return HttpResponse.json(link)
+  }),
+
   // Mock-only dev toggle (03-MERCHANT-WEB.md): rehearse the Open -> Paid projector
   // transition without a real wallet. Not part of the real API contract.
   http.post('*/api/mock/pay/:id', ({ params }) => {
