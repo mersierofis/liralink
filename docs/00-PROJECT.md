@@ -16,8 +16,11 @@ A Turkish merchant or exporter creates a **payment link** priced in Turkish lira
 **abroad** opens the link on their phone and pays in **USDC on Stellar** from their own wallet.
 LiraLink detects the on-chain payment within seconds, converts it to lira through a **Stellar
 anchor**, and pays the lira out to the merchant's IBAN. The merchant never touches crypto: they
-sell in lira and receive lira. The payer is outside Turkey, so Turkish rules restricting crypto as
-a *domestic* payment instrument do not apply to this flow (see the regulatory note in the README).
+sell in lira and receive lira. We target cross-border collection because the domestic use of
+crypto as a payment instrument is restricted in Turkey: the payer is abroad, the merchant prices and
+receives only lira, and the licensed anchor is the regulated party performing the conversion. We
+make no claim about whether this flow is cleared under Turkish payment regulation; a legal opinion
+is required before any production launch (see the regulatory note in the README).
 
 **Why Stellar:** cross-border settlement in ~5 seconds for a fraction of a cent, native USDC, and
 anchors that turn on-chain balances into local fiat. Bank wires take 3–5 days and cost 2–4%.
