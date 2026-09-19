@@ -1,56 +1,64 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 function remainingMs(iso: string): number {
   return Math.max(0, new Date(iso).getTime() - Date.now())
 }
 
-/** mm:ss only — never multi-hour walls when expiry is far out. */
+/** Compact countdown: days when needed, then h:mm:ss or mm:ss. */
 function formatCountdown(ms: number): string {
   const total = Math.floor(ms / 1000)
-  const m = Math.floor(total / 60)
+  const d = Math.floor(total / 86400)
+  const h = Math.floor((total % 86400) / 3600)
+  const m = Math.floor((total % 3600) / 60)
   const s = total % 60
+  if (d > 0) {
+    return `${d}d ${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 /**
- * On-chain links lock the quote until `expiresAt` (`quoteExpiresAt === expiresAt`).
- * Show a static lock message instead of a multi-hour countdown.
+ * The FX rate is locked for the life of the link (never re-quoted).
+ * Countdown is to `expiresAt` — when it hits zero the link is expired, not repriced.
  */
 export function QuoteCountdown({
-  quoteExpiresAt,
-  linkExpiresAt,
+  expiresAt,
+  onExpired,
 }: {
-  quoteExpiresAt: string
-  linkExpiresAt?: string
+  expiresAt: string
+  onExpired?: () => void
 }) {
-  const locked =
-    Boolean(linkExpiresAt) &&
-    new Date(quoteExpiresAt).getTime() === new Date(linkExpiresAt!).getTime()
-
-  const [ms, setMs] = useState(() => remainingMs(quoteExpiresAt))
+  const [ms, setMs] = useState(() => remainingMs(expiresAt))
+  const onExpiredRef = useRef(onExpired)
+  onExpiredRef.current = onExpired
 
   useEffect(() => {
-    if (locked) return
-    setMs(remainingMs(quoteExpiresAt))
-    const id = window.setInterval(() => setMs(remainingMs(quoteExpiresAt)), 1000)
+    setMs(remainingMs(expiresAt))
+    const tick = () => {
+      const next = remainingMs(expiresAt)
+      setMs(next)
+      if (next <= 0) onExpiredRef.current?.()
+    }
+    tick()
+    const id = window.setInterval(tick, 1000)
     return () => window.clearInterval(id)
-  }, [quoteExpiresAt, locked])
+  }, [expiresAt])
 
-  if (locked) {
+  if (ms <= 0) {
     return (
-      <p className="text-xs text-muted-foreground">
-        Rate locked until link expires
+      <p className="text-xs text-destructive">
+        This link has expired. Ask the merchant for a new link.
       </p>
     )
   }
 
-  if (ms <= 0) {
-    return <p className="text-xs text-muted-foreground">Quote expired — refresh the page for a new quote.</p>
-  }
-
   return (
     <p className="text-xs text-muted-foreground">
-      Quote refreshes in <span className="font-mono text-foreground">{formatCountdown(ms)}</span>
+      Link expires in <span className="font-mono text-foreground">{formatCountdown(ms)}</span>
+      <span className="block mt-0.5">Rate locked — no re-price.</span>
     </p>
   )
 }
