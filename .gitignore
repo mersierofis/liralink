@@ -1,0 +1,41 @@
+# Dependencies & build output
+node_modules/
+dist/
+dist-ssr/
+build/
+out/
+coverage/
+.turbo/
+.tmp-node22/
+target/
+
+# Environment files (only the example is tracked)
+.env
+.env.*
+!.env.example
+*.local
+
+# Keys & certificates
+*.pem
+*.key
+
+# Stellar CLI local state (holds identities / secret keys)
+.soroban/
+.stellar/
+
+# Databases
+prisma/*.db
+
+# Generated code
+src/generated/prisma/
+
+# Logs
+*.log
+logs/
+
+# OS / editor / tooling
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.claude/
