@@ -88,7 +88,8 @@ export type SettleFailReason =
 
 /**
  * Anchor pre-check codes (anchor.md, SEP-6 flow steps 2, 4, 5). Not HTTP errors: the settlement
- * stays `pending` with this reason and the minute job retries.
+ * stays `pending` with this reason and the minute job retries. Internal only: stored on the
+ * settlement row as `blockedReason`, never exposed by the API (see Settlement).
  */
 export type AnchorBlockedReason =
   | 'missing_iban'             // merchant has no IBAN, or the anchor rejected it over SEP-12
@@ -188,7 +189,8 @@ export interface PaymentAttempt {
   linkCode: string | null;         // null when the memo is not a link code
   merchantId: string | null;       // null for link_not_found and unmatched_memo: there is no merchant
   txHash: TxHash;
-  amountUSDC: DecimalUSDC;         // OPEN: for wrong_asset the amount is not USDC; field name and asset column undecided
+  amount: string;                  // decimal string, 7 dp (every Stellar asset has 7), in units of `assetCode` — the one money field without a unit suffix, because the asset varies
+  assetCode: string;               // e.g. 'USDC', 'XLM'
   reason: PaymentAttemptReason;
   createdAt: IsoTimestamp;
 }
@@ -207,7 +209,8 @@ export interface Settlement {
   status: SettleStatus;
   anchorRef?: string;              // the anchor's transaction id
   failReason: SettleFailReason | null;  // only when 'failed'
-  blockedReason?: AnchorBlockedReason | null; // OPEN: stored per 01-BACKEND.md/anchor.md but not in the 00-PROJECT.md Settlement; exposure, and whether its redacted detail text is exposed, undecided
+  // blockedReason (AnchorBlockedReason) is internal only: stored on the settlement row, never
+  // exposed by the API. A blocked settlement is visible to clients only as status 'pending'.
   interactiveUrl: string | null;   // sep24 only: the anchor's KYC page while it waits for the merchant; always null for sep6
   createdAt: IsoTimestamp;
   completedAt?: IsoTimestamp;

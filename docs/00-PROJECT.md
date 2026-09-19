@@ -96,8 +96,9 @@ liralink/
   pay-web/         React + Vite PWA, payer page
   contracts/       Soroban invoice contract (Rust)
 ```
-Each app has its own `package.json`. The API types are exported once from the backend DTOs and a
-copy is committed for the two frontends.
+Each app has its own `package.json`. [`docs/api.types.ts`](api.types.ts) is the source of truth for
+the API contract: the backend DTOs must conform to it, never the other way round, and the two
+frontends commit a byte-identical copy of it.
 
 **Networks and constants (testnet):**
 - Horizon: `https://horizon-testnet.stellar.org`
@@ -218,7 +219,8 @@ interface PaymentAttempt {         // an inbound payment that did not become a P
   linkCode: string | null;        // null when the memo is not a link code
   merchantId: string | null;      // null for link_not_found and unmatched_memo: there is no merchant
   txHash: string;
-  amountUSDC: string;             // 7 dp
+  amount: string;                 // 7 dp, in units of assetCode
+  assetCode: string;              // e.g. 'USDC', 'XLM'
   reason: PaymentAttemptReason;
   createdAt: string;
 }
@@ -391,6 +393,7 @@ on `create`/`cancel` — something a custodial merchant can never give.
 - TypeScript strict. English for UI strings, code, comments and commit messages.
 - Money is never a `number` in transport; arithmetic uses a decimal library.
 - `.env.example` is committed with empty values; `.env` is git-ignored. Secrets never enter the repo.
-- Small PRs into `main`. CI per app: `lint`, `typecheck`, `test`.
+- Small PRs into `master`. CI runs per app, only when that app's folder changes: install,
+  `typecheck`, `lint`, `build`; tests run in the backend job only.
 - Every screen has loading, empty and error states.
 - Log every Stellar tx hash the system creates or detects at INFO level.
