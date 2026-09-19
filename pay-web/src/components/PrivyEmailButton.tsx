@@ -4,8 +4,11 @@ import { Button } from '@/components/ui/button'
 import { isPrivyEnabled } from '@/privy/enabled'
 
 export type PrivySession = {
+  /** Set only once the wallet is on the ledger with a USDC trustline; null while signing in or setting up. */
   address: string | null
   signHash: (hashHex: string) => Promise<{ address: string; signature: string }>
+  /** USDC held by the wallet; null until it is set up. Refreshed while it cannot cover the amount. */
+  usdcBalance: string | null
 }
 
 function PrivyLoadFailed() {
@@ -25,8 +28,14 @@ const PrivyEmailFlow = lazy(() =>
 /** Secondary CTA under Freighter — email → Privy Stellar wallet. */
 export function PrivyEmailButton({
   onSession,
+  asset,
+  amountUSDC,
 }: {
   onSession?: (session: PrivySession) => void
+  /** The link's USDC asset: the trustline the new wallet gets. */
+  asset: { code: string; issuer: string }
+  /** What the payer must send: Pay stays off until the wallet holds this much. */
+  amountUSDC: string
 }) {
   const [started, setStarted] = useState(false)
   if (!isPrivyEnabled()) return null
@@ -53,7 +62,7 @@ export function PrivyEmailButton({
         </p>
       }
     >
-      <PrivyEmailFlow onSession={onSession} />
+      <PrivyEmailFlow onSession={onSession} asset={asset} amountUSDC={amountUSDC} />
     </Suspense>
   )
 }
