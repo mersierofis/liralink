@@ -30,7 +30,11 @@ export const envSchema = z
     // Stellar network. PayQuote.network is the literal 'testnet' in the API contract, and the TRY
     // anchor and x402 are testnet-only, so this build refuses anything else.
     STELLAR_NETWORK: z.preprocess(blank, z.literal('testnet')),
-    HORIZON_URL: url(),
+    // https, or http to a loopback host (local Horizon, tests). Never plain http across a network.
+    HORIZON_URL: url().refine((s) => {
+      const u = new URL(s);
+      return u.protocol === 'https:' || (u.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname));
+    }, 'must be https (http only for localhost)'),
     SOROBAN_RPC_URL: optUrl(),
     NETWORK_PASSPHRASE: optStr(),
 

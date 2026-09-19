@@ -19,8 +19,12 @@
 // - Every non-2xx response body is an `ApiError`.
 // - Quotes are NEVER re-quoted. A link's amountTRY, quotedUSDC and fxRate are locked at creation
 //   and the quote lives exactly as long as the link: quoteExpiresAt === expiresAt, always. Once it
-//   passes, the link is 'expired' and the payer is told to ask the merchant for a new link. No
-//   endpoint ever returns a new price for an existing link.
+//   passes, an 'open' link is 'expired' and the payer is told to ask the merchant for a new link.
+//   No endpoint ever returns a new price for an existing link.
+// - Only a link with no payments at all expires. An 'underpaid' link NEVER expires: money has
+//   already arrived and the rate is locked, so the remaining shortfall stays payable indefinitely,
+//   past expiresAt. Expiry is judged by when the payment was made on the ledger, not when the
+//   listener saw it.
 //
 // OPEN: fields marked `?` — the doc does not say whether "not set" is an absent key or `null`
 // (Prisma rows hold `null`). Consumers should treat both as "not set" until this is decided.
@@ -60,6 +64,7 @@ export type Iban = string;
 // Status unions and enums
 // ---------------------------------------------------------------------------------------------
 
+/** Only 'open' (no payments yet) can become 'expired'; 'underpaid' never expires. */
 export type LinkStatus = 'open' | 'underpaid' | 'paid' | 'expired' | 'cancelled';
 export type PayRail = 'contract' | 'memo' | 'x402';
 export type SettleStatus = 'pending' | 'processing' | 'completed' | 'failed';
@@ -154,9 +159,9 @@ export interface PaymentLink {
   fxSpread: FxSpread | null;       // the source's spread in that rate; "0.0000000" for mock; null if the source did not state it
   quoteExpiresAt: IsoTimestamp;    // === expiresAt, always: the quote is never re-quoted
   status: LinkStatus;
-  expiresAt: IsoTimestamp;         // default +24 h
+  expiresAt: IsoTimestamp;         // default +24 h. Ends an 'open' link only; an 'underpaid' link stays payable after it
   payUrl: string;                  // PAY_WEB_BASE_URL + '/' + code
-  receivedUSDC: DecimalUSDC;       // cumulative USDC matched so far, "0.0000000" until the first payment
+  receivedUSDC: DecimalUSDC;       // cumulative USDC received for this link, "0.0000000" until the first payment. Includes an overpayment's excess, which is also credited to unallocatedUSDC
   shortfallUSDC?: DecimalUSDC;     // only while status is 'underpaid'
   payment?: Payment;               // latest transfer — alias for payments.at(-1)
   payments: Payment[];             // every transfer that credited this link, oldest → newest
@@ -540,7 +545,8 @@ export interface GetHealthResponse {
   ok: boolean;                     // OPEN: type not documented; boolean assumed from the name
   horizon: 'up' | 'down';
   anchor: AnchorProvider;
-  listener: 'running' | 'stopped';
+  listener: 'running' | 'stopped';  // 'running' while the Horizon payment stream is connected
+  listenerCursor: string | null;     // Horizon paging token of the last processed operation; null before the first
   platformAccount: StellarAccountId;
   settlementMode: SettlementMode;
 }

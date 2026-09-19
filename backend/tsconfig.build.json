@@ -1,6 +1,8 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "rootDir": "./src" },
+  // Not incremental: nest build deletes dist/ first, and a stale .tsbuildinfo then makes tsc emit
+  // nothing, leaving no dist/ at all on every second build.
+  "compilerOptions": { "rootDir": "./src", "incremental": false },
   "include": ["src"],
   "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
 }

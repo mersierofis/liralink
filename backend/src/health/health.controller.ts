@@ -2,6 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import type { AnchorProvider, GetHealthResponse, SettlementMode } from '../contract/api.types';
 import { AppConfig } from '../config/app-config';
+import { ListenerService } from '../listener/listener.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const HORIZON_TIMEOUT_MS = 2_000;
@@ -11,8 +12,10 @@ class HealthDto implements GetHealthResponse {
   ok!: boolean;
   horizon!: 'up' | 'down';
   anchor!: AnchorProvider;
-  /** Always 'stopped' until the payment listener exists. */
+  /** 'running' while the Horizon payment stream is connected. */
   listener!: 'running' | 'stopped';
+  /** Paging token of the last processed operation; null before the first. */
+  listenerCursor!: string | null;
   platformAccount!: string;
   settlementMode!: SettlementMode;
 }
@@ -23,6 +26,7 @@ export class HealthController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: AppConfig,
+    private readonly listener: ListenerService,
   ) {}
 
   /** GET /health → 200 */
@@ -30,11 +34,13 @@ export class HealthController {
   @ApiOkResponse({ type: HealthDto })
   async get(): Promise<GetHealthResponse> {
     const [ok, horizon] = await Promise.all([this.databaseUp(), this.horizonUp()]);
+    const { state, cursor } = this.listener.status();
     return {
       ok,
       horizon: horizon ? 'up' : 'down',
       anchor: this.config.anchorProvider,
-      listener: 'stopped',
+      listener: state,
+      listenerCursor: cursor,
       platformAccount: this.config.platformAccount,
       settlementMode: this.config.settlementMode,
     };

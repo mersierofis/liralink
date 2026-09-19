@@ -222,3 +222,22 @@ model Withdrawal {
 
   @@index([merchantId, createdAt])
 }
+
+// Listener idempotency: one row per Horizon operation handled, whatever the outcome. Inserted in
+// the same DB transaction as the operation's effects and the cursor move, so a replay (reconnect,
+// catch-up poll, restart) hits the primary key and changes nothing.
+model ProcessedOperation {
+  opId        String   @id // Horizon operation id
+  txHash      String
+  outcome     String // payment | stray | attempt:<reason> | ignored:<why>
+  processedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([txHash])
+}
+
+// Where each stream resumes after a restart: the paging token of the last processed operation.
+model ListenerCursor {
+  stream      String   @id // e.g. horizon-payments:<platform account>
+  pagingToken String
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+}
