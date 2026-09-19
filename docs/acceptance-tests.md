@@ -9,6 +9,10 @@ and [`api.types.ts`](api.types.ts), with the behaviour details taken from
 and [`anchor.md`](anchor.md). If a scenario disagrees with those documents, the documents win: fix the
 scenario.
 
+**The deployed demo runs Mode B; Mode A is for local development only.** Mode B is the SEP-6 anchor with
+auto-payout to the IBAN, and Mode A is the in-process mock anchor with a withdrawable balance (see
+[section 2.1](#21-which-mode-is-the-backend-in)). Run the `[Mode B]` scenarios against the deployed demo.
+
 All merchant names and IBANs are fictional test data. Everything runs on **Stellar testnet** and no
 real money moves.
 
