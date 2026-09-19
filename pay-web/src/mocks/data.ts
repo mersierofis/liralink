@@ -18,14 +18,16 @@ function payment(partial: Partial<Payment> & Pick<Payment, 'txHash' | 'amountUSD
 
 function baseQuote(overrides: Partial<PayQuote> & Pick<PayQuote, 'code' | 'status'>): PayQuote {
   const code = overrides.code
+  // Locked quote for the life of the link (backend FX): quoteExpiresAt === expiresAt.
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
   return {
     merchantName: 'Erdemli Narenciye A.Ş.',
     title: 'Lemon order #1042',
     amountTRY: '5000.00',
     amountUSDC: '147.0588236',
     fxRate: '34.0000000',
-    quoteExpiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    quoteExpiresAt: expiresAt,
+    expiresAt,
     receivedUSDC: '0.0000000',
     rails: { memo: { destination: PLATFORM, memo: code } },
     asset: { code: 'USDC', issuer: USDC_ISSUER },

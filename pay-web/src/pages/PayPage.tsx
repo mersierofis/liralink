@@ -54,6 +54,8 @@ export function PayPage() {
   const [loadingRail, setLoadingRail] = useState<'memo' | 'contract' | null>(null)
   const [lastRail, setLastRail] = useState<'memo' | 'contract'>('memo')
   const [pendingTxHash, setPendingTxHash] = useState<string | null>(null)
+  /** Client-side: expiresAt elapsed — rate is never re-quoted; show expired screen. */
+  const [linkExpiredLocally, setLinkExpiredLocally] = useState(false)
   const [balances, setBalances] = useState<{
     hasTrustline: boolean
     balance: string
@@ -87,6 +89,15 @@ export function PayPage() {
   useEffect(() => {
     if (liveStatus === 'paid') setPhase('paid')
   }, [liveStatus])
+
+  useEffect(() => {
+    setLinkExpiredLocally(false)
+  }, [code])
+
+  useEffect(() => {
+    if (!quote?.expiresAt) return
+    if (Date.parse(quote.expiresAt) <= Date.now()) setLinkExpiredLocally(true)
+  }, [quote?.expiresAt])
 
   useEffect(() => {
     if (!payerAddress || !quote) {
@@ -228,12 +239,17 @@ export function PayPage() {
 
   if (!mergedQuote) return null
 
-  if (mergedQuote.status === 'expired' || mergedQuote.status === 'cancelled') {
+  if (
+    mergedQuote.status === 'expired' ||
+    mergedQuote.status === 'cancelled' ||
+    linkExpiredLocally
+  ) {
+    const expired = mergedQuote.status === 'expired' || linkExpiredLocally
     return (
       <Shell>
         <Card className="w-full max-w-[420px]">
           <CardHeader className="items-center gap-2">
-            <StatusBadge status={mergedQuote.status} />
+            <StatusBadge status={expired ? 'expired' : 'cancelled'} />
             <MerchantHeader
               merchantName={mergedQuote.merchantName}
               title={mergedQuote.title}
@@ -242,10 +258,10 @@ export function PayPage() {
           </CardHeader>
           <CardContent>
             <ErrorState
-              title={mergedQuote.status === 'expired' ? 'Link expired' : 'Link cancelled'}
+              title={expired ? 'Link expired' : 'Link cancelled'}
               message={
-                mergedQuote.status === 'expired'
-                  ? 'Ask the merchant for a new payment link.'
+                expired
+                  ? 'This link has expired. Ask the merchant for a new payment link — the rate is not refreshed.'
                   : 'This payment link was cancelled by the merchant.'
               }
             />
@@ -282,7 +298,10 @@ export function PayPage() {
           />
         </CardHeader>
         <CardContent className="space-y-5">
-          <AmountDisplay quote={mergedQuote} />
+          <AmountDisplay
+            quote={mergedQuote}
+            onLinkExpired={() => setLinkExpiredLocally(true)}
+          />
 
           {phase === 'paying' ? (
             <PayingState />
