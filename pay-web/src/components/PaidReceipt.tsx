@@ -59,6 +59,11 @@ export function PaidReceipt({
         <p className="text-muted-foreground" title={quote.receivedUSDC}>
           {formatUSDCDisplay(quote.receivedUSDC)} USDC received
         </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Rate {quote.fxRate} TRY/USDC
+          {quote.fxSpread != null ? ` · spread ${quote.fxSpread}` : ''}
+          <span className="block">Quoted {new Date(quote.fxRateAt).toLocaleString()}</span>
+        </p>
       </div>
       {p ? (
         <div className="w-full space-y-2 text-left text-xs">

@@ -26,6 +26,8 @@ function baseQuote(overrides: Partial<PayQuote> & Pick<PayQuote, 'code' | 'statu
     amountTRY: '5000.00',
     amountUSDC: '147.0588236',
     fxRate: '34.0000000',
+    fxRateAt: new Date(Date.now() - 60_000).toISOString(),
+    fxSpread: '0.0050237',
     quoteExpiresAt: expiresAt,
     expiresAt,
     receivedUSDC: '0.0000000',
