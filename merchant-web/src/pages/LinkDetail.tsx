@@ -16,6 +16,7 @@ import { ExplorerLink } from '@/components/ExplorerLink'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { SettlementStatusBadge } from '@/components/SettlementStatusBadge'
+import { SettlementTimeline } from '@/components/SettlementTimeline'
 import { useLink, usePayments, useSimulatePayment } from '@/api/hooks'
 import { HttpError } from '@/api/client'
 import { formatTRY, formatUSDC, formatUSDCFull } from '@/lib/money'
@@ -154,6 +155,12 @@ export default function LinkDetailPage() {
         </Card>
       </div>
 
+      <p className="text-sm text-muted-foreground">
+        Rate locked at {new Decimal(link.fxRate).toFixed(2)} TRY per USDC
+        {link.fxSpread !== null && new Decimal(link.fxSpread).gt(0) ? ` (incl. ${link.fxSpread} spread)` : ''}, fetched{' '}
+        {formatDateTime(link.fxRateAt)}. It is never re-quoted; the link expires {formatDateTime(link.expiresAt)}.
+      </p>
+
       <Card>
         <CardHeader>
           <CardTitle>Payments</CardTitle>
@@ -226,9 +233,12 @@ export default function LinkDetailPage() {
           {!paymentsQuery.isLoading &&
             link.payments.length > 0 &&
             settledPayments.map((payment) => (
-              <div key={payment.id} className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm text-muted-foreground">{formatUSDC(payment.amountUSDC)}</span>
-                <SettlementStatusBadge payment={payment} />
+              <div key={payment.id} className="space-y-3 rounded-lg border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm text-muted-foreground">{formatUSDC(payment.amountUSDC)}</span>
+                  <SettlementStatusBadge payment={payment} />
+                </div>
+                {payment.settlement && <SettlementTimeline settlement={payment.settlement} />}
               </div>
             ))}
           {!paymentsQuery.isLoading && link.payments.length > 0 && settledPayments.length === 0 && (
