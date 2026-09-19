@@ -4,8 +4,8 @@
 // Enum values are the exact string literals of the contract's unions.
 
 generator client {
-  provider     = "prisma-client"
-  output       = "../src/generated/prisma"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
   moduleFormat        = "cjs"
   importFileExtension = "js"
 }
@@ -68,6 +68,12 @@ enum PaymentAttemptReason {
   wrong_asset
 }
 
+enum FxSource {
+  mock
+  live
+  anchor
+}
+
 enum UnallocatedSource {
   stray
   overpaid
@@ -101,6 +107,12 @@ model PaymentLink {
   amountTRY      Decimal    @db.Decimal(20, 7) // locked at creation
   quotedUSDC     Decimal    @db.Decimal(20, 7) // locked at creation, never recomputed
   fxRate         Decimal    @db.Decimal(20, 7) // at quote time
+  // What was quoted and when, for the receipt. Written once at creation, like the quote itself.
+  fxSource       FxSource
+  fxRateAt       DateTime   @db.Timestamptz(3) // when the rate was obtained from its source
+  fxMidRate      Decimal    @db.Decimal(20, 7) // TRY per USDC before the spread
+  fxSpread       Decimal?   @db.Decimal(20, 7) // share of each USDC kept as spread (0.0050237 ≈ 50 bps); null if not stated in USDC
+  fxQuoteRaw     Json?      @db.Json // key order kept (jsonb would reorder); the source's response, verbatim (the anchor's SEP-38 /price body); null for mock
   quoteExpiresAt DateTime   @db.Timestamptz(3)
   status         LinkStatus @default(open)
   expiresAt      DateTime   @db.Timestamptz(3)

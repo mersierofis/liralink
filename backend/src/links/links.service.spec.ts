@@ -1,8 +1,10 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { Keypair } from '@stellar/stellar-sdk';
 import { AppConfig } from '../config/app-config';
 import type { Env } from '../config/env';
 import type { Merchant as MerchantRow } from '../generated/prisma/client';
 import type { FxService } from '../fx/fx.service';
+import { FxUnavailableError } from '../fx/fx.types';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { LinkWithPayments } from './link.mapper';
 import { LinksService } from './links.service';
@@ -19,7 +21,14 @@ describe('LinksService quote locking', () => {
   const merchant = { id: '00000000-0000-4000-8000-000000000001', businessName: 'Erdemli Narenciye' } as MerchantRow;
 
   let rate: string;
-  const fx = { getRate: jest.fn(async () => ({ rate, source: 'mock' as const })) } as unknown as FxService;
+  let fxDown = false;
+  const fetchedAt = new Date('2026-09-19T11:26:33.000Z');
+  const fx = {
+    getRate: jest.fn(async () => {
+      if (fxDown) throw new FxUnavailableError('anchor /price answered HTTP 502');
+      return { rate, midRate: '34.170000', spread: '0.0050237', source: 'anchor' as const, fetchedAt, raw: { total_price: 'x' } };
+    }),
+  } as unknown as FxService;
 
   // An in-memory stand-in for the one table the service touches.
   const rows = new Map<string, LinkWithPayments>();
@@ -58,6 +67,7 @@ describe('LinksService quote locking', () => {
     rows.clear();
     jest.clearAllMocks();
     rate = '34.00';
+    fxDown = false;
   });
 
   it('computes quotedUSDC once, from the rate at creation, rounded up to 7 dp', async () => {
@@ -70,6 +80,18 @@ describe('LinksService quote locking', () => {
     // What was written is exactly what is returned: strings, not floats.
     const data = (prisma.paymentLink.create as jest.Mock).mock.calls[0][0].data;
     expect(data).toMatchObject({ amountTRY: '5000.00', quotedUSDC: '147.0588236', fxRate: '34.00' });
+  });
+
+  it('stores what was quoted and when: source, timestamp, mid rate, spread and the raw response', async () => {
+    await service.create(merchant, { title: 'x', amountTRY: '10.00' });
+    const data = (prisma.paymentLink.create as jest.Mock).mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      fxSource: 'anchor',
+      fxRateAt: fetchedAt,
+      fxMidRate: '34.170000',
+      fxSpread: '0.0050237',
+      fxQuoteRaw: { total_price: 'x' },
+    });
   });
 
   it('never recomputes the quote after the rate moves', async () => {
@@ -92,6 +114,17 @@ describe('LinksService quote locking', () => {
     const expires = new Date(link.expiresAt).getTime();
     expect(expires).toBeGreaterThanOrEqual(before + 2 * 3_600_000);
     expect(expires).toBeLessThanOrEqual(Date.now() + 2 * 3_600_000);
+  });
+
+  it('creates no link and answers 503 when the rate cannot be fetched', async () => {
+    fxDown = true;
+    const err = await service.create(merchant, { title: 'x', amountTRY: '10.00' }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ServiceUnavailableException);
+    expect((err as ServiceUnavailableException).message).toBe(
+      'FX rate unavailable, no link created: anchor /price answered HTTP 502',
+    );
+    expect(prisma.paymentLink.create).not.toHaveBeenCalled();
   });
 
   it('gives a later link the later rate without touching the earlier one', async () => {

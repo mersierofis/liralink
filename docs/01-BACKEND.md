@@ -7,11 +7,15 @@
 ## Stack
 
 - Node 22, **NestJS 11**, TypeScript strict.
-- **PostgreSQL 16** through **Prisma 7** (exact pin) with the `pg` driver adapter.
+- **PostgreSQL 18** through **Prisma 7** (exact pin) with the `pg` driver adapter.
 - `@stellar/stellar-sdk` 16.x — Horizon and Soroban RPC clients, transaction building.
-- Money math with Prisma's re-exported `Decimal` only. It is API-identical to decimal.js but a
-  distinct class; mixing the two breaks `instanceof` and mixed operands, so there is exactly one
-  import site.
+- Money math with **decimal.js**, imported in exactly one file, `src/common/money.ts`, which
+  parses, rounds and formats every amount. Money is a decimal string everywhere else: strings go
+  into Prisma on write, and a Prisma `Decimal` read back is converted with `toFixed()` (never
+  `toString()`, which switches to exponent notation for small values) and re-parsed there. Prisma's
+  `Decimal` is a distinct class, so it is never used for arithmetic or mixed with decimal.js.
+  ESLint enforces this: `decimal.js` imports outside `money.ts`, `Number()`, `parseFloat`,
+  `parseInt` and `.toNumber()` are errors.
 - `@nestjs/config`, `schedule`, `swagger`, `event-emitter`, `throttler`; `class-validator`.
 - Auth: `@nestjs/jwt` + `@nestjs/passport` (`passport-jwt`), `bcryptjs` (cost 10), JWT lifetime 7 d.
 - Tests: Jest (unit) + Supertest (e2e against a test database).
@@ -41,7 +45,7 @@
 | auth | Register, login, JWT strategy and guard, `@CurrentMerchant()` |
 | merchants | `GET/PATCH /me` — `autoSavePercent` 0–50, `iban` `^TR\d{24}$` |
 | links | Create / list / get / cancel / on-chain retry; code generator; quote at creation; expiry cron |
-| fx | Rate source: `mock` fixed, `live` public endpoint, `anchor` SEP-38; 5-minute cache |
+| fx | Rate source: `anchor` (default) — SEP-38 `/price`, fetched fresh for every link, no cache and no fallback: a failure is a `503` on `POST /links`; `mock` — fixed rate, for tests and offline work; `live` — not implemented, refused at boot. See [`anchor.md`](anchor.md#sep-38--why-fx_provideranchor) |
 | stellar | Horizon + RPC clients, platform account bootstrap, asset constants, **payment listener**, invoice-contract client and event poller |
 | payments | Records a detected transfer, applies the exact-amount policy, emits `payment.detected` |
 | settlements | On `payment.detected`: create a settlement and drive it through an anchor adapter; minute reconciler |
