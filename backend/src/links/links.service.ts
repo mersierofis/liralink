@@ -108,9 +108,8 @@ export class LinksService {
   }
 
   /**
-   * Expire on read: every path that returns a link first moves the matching `open` links whose
-   * expiresAt has passed to `expired`, so no response ever shows an open link with a lapsed quote.
-   * One conditional UPDATE; a link that is no longer `open` is never touched.
+   * Expire on read: move matching **open** links past expiresAt to expired.
+   * Underpaid links are never expired — money has arrived and the rate is locked.
    */
   private async expireDue(where: Prisma.PaymentLinkWhereInput): Promise<void> {
     await this.prisma.paymentLink.updateMany({

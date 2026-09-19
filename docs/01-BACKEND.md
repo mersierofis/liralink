@@ -109,9 +109,12 @@ the public key. `/health` exposes it.
   `deadline` = the ledger that corresponds to `expiresAt`, so the contract and the API expire the
   quote at the same moment.
 - **Expiry on read:** every path that returns a link (`GET /links`, `GET /links/:id`, cancel,
-  `GET /pay/:code`) first moves the matching `open` links whose `expiresAt` has passed to `expired`,
-  in one conditional `UPDATE`. No response ever shows an open link with a lapsed quote. The payment
-  matcher must apply the same `expiresAt` check, not trust `status` alone.
+  `GET /pay/:code`) first moves matching **`open`** links whose `expiresAt` has passed to `expired`,
+  in one conditional `UPDATE`. **`underpaid` links are never expired** — money has arrived and the
+  rate is locked, so the shortfall stays payable indefinitely. No response ever shows an `open`
+  link with a lapsed quote. The payment matcher applies the same rule: an `open` link past
+  `expiresAt` is treated as not payable (`link_not_open`); an `underpaid` link past `expiresAt`
+  is still credited.
 
 ## Payment listener — the heart
 
@@ -125,7 +128,8 @@ the public key. `/health` exposes it.
 - **Match** only when all hold: `to` = platform; `asset_type` = `credit_alphanum4` **and**
   `asset_code` = `USDC_CODE` **and** `asset_issuer` = `USDC_ISSUER` (anyone can issue a "USDC");
   `memo_type` = `text` and **`memo_bytes`** (base64) equals the base64 of a link code — never the
-  lossy UTF-8 `memo` field; the link is `open` or `underpaid`.
+  lossy UTF-8 `memo` field; the link is `open` (and not past `expiresAt`) or `underpaid`
+  (payable even past `expiresAt`).
 - The matcher is a **pure function** `(operation, link, config) → decision`, unit-tested with
   fixtures: wrong asset, wrong issuer, wrong memo, underpay, overpay, top-up on an `underpaid` link.
 - **Exact-amount policy:** `total = link.receivedUSDC + op.amount`; equal → `paid`; less →

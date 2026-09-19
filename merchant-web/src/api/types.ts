@@ -21,6 +21,9 @@
 //   and the quote lives exactly as long as the link: quoteExpiresAt === expiresAt, always. Once it
 //   passes, the link is 'expired' and the payer is told to ask the merchant for a new link. No
 //   endpoint ever returns a new price for an existing link.
+// - An underpaid link NEVER expires. Money has already arrived and the rate is locked, so the
+//   remaining balance stays payable indefinitely (status stays 'underpaid' past expiresAt). Only
+//   links with no payments at all (status 'open') expire when expiresAt passes.
 //
 // OPEN: fields marked `?` — the doc does not say whether "not set" is an absent key or `null`
 // (Prisma rows hold `null`). Consumers should treat both as "not set" until this is decided.
@@ -153,8 +156,8 @@ export interface PaymentLink {
   fxRateAt: IsoTimestamp;          // when that rate was fetched from its source
   fxSpread: FxSpread | null;       // the source's spread in that rate; "0.0000000" for mock; null if the source did not state it
   quoteExpiresAt: IsoTimestamp;    // === expiresAt, always: the quote is never re-quoted
-  status: LinkStatus;
-  expiresAt: IsoTimestamp;         // default +24 h
+  status: LinkStatus;              // 'underpaid' never flips to 'expired' — see header rule
+  expiresAt: IsoTimestamp;         // default +24 h; only 'open' (zero received) expires at this time
   payUrl: string;                  // PAY_WEB_BASE_URL + '/' + code
   receivedUSDC: DecimalUSDC;       // cumulative USDC matched so far, "0.0000000" until the first payment
   shortfallUSDC?: DecimalUSDC;     // only while status is 'underpaid'
@@ -279,7 +282,7 @@ export interface PayQuote {
   fxRateAt: IsoTimestamp;          // when that rate was fetched — shown on the receipt
   fxSpread: FxSpread | null;       // the spread in that rate — shown on the receipt
   quoteExpiresAt: IsoTimestamp;    // === expiresAt, always
-  status: LinkStatus;              // 'expired': "This link has expired — ask the merchant for a new one." Never a new price
+  status: LinkStatus;              // 'expired': unpaid open link past expiresAt — ask merchant for a new link. 'underpaid' never expires. Never a new price
   expiresAt: IsoTimestamp;
   receivedUSDC: DecimalUSDC;
   shortfallUSDC?: DecimalUSDC;     // only while status is 'underpaid'
@@ -474,7 +477,8 @@ export interface GetUnallocatedResponse extends Paginated<UnallocatedCredit> {
 
 /**
  * GET /pay/:code → 200. Never re-quotes: returns the link's locked quote. An open link past
- * expiresAt comes back as status 'expired' (it is expired on read). 404 unknown code.
+ * expiresAt comes back as status 'expired' (it is expired on read). An underpaid link past
+ * expiresAt stays 'underpaid' and payable. 404 unknown code.
  */
 export type GetPayResponse = PayQuote;
 
@@ -541,6 +545,8 @@ export interface GetHealthResponse {
   horizon: 'up' | 'down';
   anchor: AnchorProvider;
   listener: 'running' | 'stopped';
+  /** Horizon paging token the memo-rail listener last persisted; null when never started / stopped with no cursor. */
+  listenerCursor: string | null;
   platformAccount: StellarAccountId;
   settlementMode: SettlementMode;
 }

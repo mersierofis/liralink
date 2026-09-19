@@ -81,6 +81,24 @@ export function sameDecimal(a: string, b: string): boolean {
   return parse(a).eq(parse(b));
 }
 
+/** Compare two plain decimals: −1 if a < b, 0 if equal, 1 if a > b. */
+export function compareDecimal(a: MoneyLike, b: MoneyLike): -1 | 0 | 1 {
+  const c = parse(a).cmp(parse(b));
+  return c < 0 ? -1 : c > 0 ? 1 : 0;
+}
+
+/** a + b as USDC (exactly 7 dp). */
+export function addUSDC(a: MoneyLike, b: MoneyLike): string {
+  return parse(a).plus(parse(b)).toFixed(USDC_DP);
+}
+
+/** a − b as USDC (exactly 7 dp). Throws if the result would be negative. */
+export function subUSDC(a: MoneyLike, b: MoneyLike): string {
+  const d = parse(a).minus(parse(b));
+  if (d.lt(0)) throw new Error(`USDC subtraction underflow: ${formatUSDC(a)} − ${formatUSDC(b)}`);
+  return d.toFixed(USDC_DP);
+}
+
 /**
  * 1 / price, rounded DOWN to `dp` decimal places. Turns a SEP-38 price (USDC per 1 TRY) into a
  * rate (TRY per 1 USDC). Rounding the rate down can only make quotedUSDC larger, never short.

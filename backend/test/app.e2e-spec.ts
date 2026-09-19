@@ -15,7 +15,8 @@ describe('System (e2e)', () => {
       ok: true, // database reachable
       horizon: 'down', // HORIZON_URL points at a closed port in tests
       anchor: 'mock',
-      listener: 'stopped', // no payment listener in this build
+      listener: 'stopped', // SSE disabled when NODE_ENV=test
+      listenerCursor: null,
       platformAccount: Keypair.fromSecret(process.env.PLATFORM_ACCOUNT_SECRET!).publicKey(),
       settlementMode: 'balance',
     });

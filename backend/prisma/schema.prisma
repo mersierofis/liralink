@@ -222,3 +222,22 @@ model Withdrawal {
 
   @@index([merchantId, createdAt])
 }
+
+/** Horizon operation id already handled by the memo-rail listener — reconnects will replay. */
+model ProcessedOperation {
+  opId      String   @id // Horizon operation id
+  txHash    String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([txHash])
+}
+
+/**
+ * One row per stream. Memo rail uses id `horizon-payments`. Soroban invoice cursors use
+ * `soroban-invoice:<contractId>` (01-BACKEND.md).
+ */
+model ListenerCursor {
+  id        String   @id // stream name
+  cursor    String // Horizon paging token, or Soroban RPC event cursor
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}

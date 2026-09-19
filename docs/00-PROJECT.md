@@ -74,11 +74,14 @@ Diagram and Soroban storage/auth patterns: [`architecture.md`](architecture.md).
 - **Never re-quoted.** A link's rate is locked at creation and the quote lives exactly as long as
   the link (`quoteExpiresAt === expiresAt`). When it lapses the link is `expired` and the payer is
   told to ask the merchant for a new one — never shown a new price.
+- **Underpaid never expires.** Once any USDC has been matched (`status: underpaid`), the link stays
+  payable indefinitely — money has already arrived and the rate is locked. Only links with no
+  payments at all (`status: open`) move to `expired` when `expiresAt` passes.
 - **Exact-amount policy.** `amountTRY` and `quotedUSDC` are locked when the link is created.
   Settlement always uses `link.amountTRY`, never `receivedUSDC × fxRate`.
   - `received == quotedUSDC` → `paid`.
-  - `received < quotedUSDC` → `underpaid`; the link stays open for a top-up, `receivedUSDC` and
-    `shortfallUSDC` track progress.
+  - `received < quotedUSDC` → `underpaid`; the link stays payable for a top-up forever,
+    `receivedUSDC` and `shortfallUSDC` track progress.
   - `received > quotedUSDC` → `paid`; the excess is credited to `merchant.unallocatedUSDC`, visible
     in the panel and never auto-converted to TRY.
   - An inbound payment that does not become a `Payment` is **never silently dropped**: it creates
@@ -305,7 +308,7 @@ and nothing the payer can see carries it at all. Requests carry the full IBAN, `
 ### Payer (public, no auth)
 | Method | Path | Response |
 |---|---|---|
-| GET | `/pay/:code` | `PayQuote` with the link's locked quote — **never re-quotes**. Past `expiresAt` an open link comes back `expired`. `code` is case-insensitive |
+| GET | `/pay/:code` | `PayQuote` with the link's locked quote — **never re-quotes**. Past `expiresAt` an **open** link comes back `expired`; an **underpaid** link stays payable. `code` is case-insensitive |
 | POST | `/pay/:code/submitted` | `{ txHash }` → `202 { accepted: true }`. A hint to check this tx immediately; detection works without it |
 | GET | `/pay/:code/status` | `{ status, receivedUSDC, shortfallUSDC?, payment?, payments }` — poll every 2 s |
 | GET | `/pay/:code/agent` | **x402, testnet only, experimental.** See below |
@@ -328,7 +331,7 @@ and nothing the payer can see carries it at all. Requests carry the full IBAN, `
 ### System
 | Method | Path | Response |
 |---|---|---|
-| GET | `/health` | `{ ok, horizon: 'up'\|'down', anchor: 'mock'\|'sep6'\|'sep24', listener: 'running'\|'stopped', platformAccount: 'G…', settlementMode }` |
+| GET | `/health` | `{ ok, horizon: 'up'\|'down', anchor: 'mock'\|'sep6'\|'sep24', listener: 'running'\|'stopped', listenerCursor: string\|null, platformAccount: 'G…', settlementMode }` |
 | GET | `/fx` | `{ pair: 'USDC/TRY', rate, source: 'mock'\|'live'\|'anchor', fetchedAt }` |
 
 ### Status codes
