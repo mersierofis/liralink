@@ -1,9 +1,7 @@
-import { Buffer } from 'buffer'
 import {
   Asset,
   BASE_FEE,
   Horizon,
-  Keypair,
   Memo,
   Networks,
   Operation,
@@ -12,6 +10,7 @@ import {
 import type { PayQuote } from '@/api/types'
 import { payAmountUSDC } from '@/api/hooks'
 import { BuildPaymentError, getUsdcBalance } from '@/stellar/buildPayment'
+import { signWithPrivy } from '@/stellar/setupPrivyWallet'
 
 /**
  * Build memo-rail payment, sign tx hash via Privy `signRawHash`, submit to Horizon.
@@ -44,7 +43,7 @@ export async function payViaPrivy(opts: {
   if (!hasTrustline) {
     throw new BuildPaymentError(
       'no_trust',
-      'No USDC trustline yet. Open the email path again after adding trustline (or ask backend to changeTrust).',
+      'This email wallet has no USDC trustline yet. Sign out and sign in again to finish setting it up.',
     )
   }
 
@@ -71,17 +70,7 @@ export async function payViaPrivy(opts: {
     .setTimeout(180)
     .build()
 
-  const hashHex = tx.hash().toString('hex')
-  const { signature } = await signHash(hashHex)
-  const sigHex = signature.startsWith('0x') ? signature.slice(2) : signature
-  const sigBytes = Buffer.from(sigHex, 'hex')
-
-  const pub = Keypair.fromPublicKey(address)
-  if (!pub.verify(Buffer.from(hashHex, 'hex'), sigBytes)) {
-    throw new Error('Privy signature did not verify against the Stellar address')
-  }
-
-  tx.addSignature(address, sigBytes.toString('base64'))
+  await signWithPrivy(tx, address, signHash)
   const result = await server.submitTransaction(tx)
   return { hash: result.hash }
 }

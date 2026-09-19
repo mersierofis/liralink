@@ -20,6 +20,7 @@ import { isPrivyEnabled } from '@/privy/enabled'
 import { buildPaymentXdr, loadUsdcBalance, submitSignedXdr } from '@/stellar/buildPayment'
 import { isContractRailEnabled, payViaContract } from '@/stellar/payViaContract'
 import { payViaPrivy } from '@/stellar/payViaPrivy'
+import { coversAmount } from '@/stellar/setupPrivyWallet'
 import { useWallet } from '@/stellar/useWallet'
 
 type UiPhase = 'quote' | 'paying' | 'paid'
@@ -122,7 +123,8 @@ export function PayPage() {
     return () => {
       cancelled = true
     }
-  }, [payerAddress, quote])
+    // privySession.usdcBalance: an email wallet that just received testnet USDC reloads balances.
+  }, [payerAddress, quote, privySession?.usdcBalance])
 
   async function runPay(opts?: { skipWallet?: boolean; rail?: 'memo' | 'contract' }) {
     if (!mergedQuote || !code) return
@@ -327,7 +329,11 @@ export function PayPage() {
                 onDisconnect={wallet.disconnect}
               />
               {isPrivyEnabled() && !wallet.address ? (
-                <PrivyEmailButton onSession={setPrivySession} />
+                <PrivyEmailButton
+                  onSession={setPrivySession}
+                  asset={mergedQuote.asset}
+                  amountUSDC={payAmountUSDC(mergedQuote)}
+                />
               ) : null}
               {wallet.errorKind === 'mainnet' ? (
                 <TestnetRequiredCard
@@ -354,6 +360,8 @@ export function PayPage() {
                     : !payerAddress ||
                       !balances?.funded ||
                       !balances.hasTrustline ||
+                      // An email wallet without enough USDC shows how to fund it instead.
+                      (usingPrivy && !coversAmount(balances.balance, payAmountUSDC(mergedQuote))) ||
                       submitting
                 }
                 loading={submitting}
