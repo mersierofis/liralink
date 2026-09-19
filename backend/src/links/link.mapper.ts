@@ -1,7 +1,7 @@
 import type { Payment, PaymentLink } from '../contract/api.types';
 import type { AppConfig } from '../config/app-config';
 import type { Payment as PaymentRow, PaymentLink as PaymentLinkRow } from '../generated/prisma/client';
-import { formatRate, formatTRY, formatUSDC } from '../common/money';
+import { formatRate, formatSpread, formatTRY, formatUSDC } from '../common/money';
 
 export type LinkWithPayments = PaymentLinkRow & { payments: PaymentRow[] };
 
@@ -35,6 +35,8 @@ export function toPaymentLink(row: LinkWithPayments, config: AppConfig): Payment
     amountTRY: formatTRY(row.amountTRY),
     quotedUSDC: formatUSDC(row.quotedUSDC),
     fxRate: formatRate(row.fxRate),
+    fxRateAt: row.fxRateAt.toISOString(),
+    fxSpread: row.fxSpread === null ? null : formatSpread(row.fxSpread),
     quoteExpiresAt: row.quoteExpiresAt.toISOString(),
     status: row.status,
     expiresAt: row.expiresAt.toISOString(),

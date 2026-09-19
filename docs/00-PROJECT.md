@@ -71,6 +71,9 @@ Diagram and Soroban storage/auth patterns: [`architecture.md`](architecture.md).
 - **Custody model (hackathon simplification).** One platform account holds USDC; merchant balances
   are ledger rows in Postgres. Roadmap: segregated per-merchant accounts, then non-custodial
   per-link withdrawals.
+- **Never re-quoted.** A link's rate is locked at creation and the quote lives exactly as long as
+  the link (`quoteExpiresAt === expiresAt`). When it lapses the link is `expired` and the payer is
+  told to ask the merchant for a new one — never shown a new price.
 - **Exact-amount policy.** `amountTRY` and `quotedUSDC` are locked when the link is created.
   Settlement always uses `link.amountTRY`, never `receivedUSDC × fxRate`.
   - `received == quotedUSDC` → `paid`.
@@ -141,7 +144,9 @@ interface PaymentLink {
   amountTRY: string;              // 2 dp, e.g. "5000.00" — locked at creation
   quotedUSDC: string;             // 7 dp — locked at creation, never recomputed from what is received
   fxRate: string;                 // TRY per 1 USDC at quote time
-  quoteExpiresAt: string;         // on-chain links: === expiresAt (locked); otherwise QUOTE_TTL_MINUTES and /pay re-quotes
+  fxRateAt: string;               // when fxRate was fetched from its source
+  fxSpread: string | null;        // 7 dp — the source's spread in fxRate (0.0050237 ≈ 50 bps); null if not stated
+  quoteExpiresAt: string;         // === expiresAt, always: never re-quoted
   status: LinkStatus;
   expiresAt: string;              // default +24 h
   payUrl: string;                 // PAY_WEB_BASE_URL + '/' + code
@@ -199,7 +204,9 @@ interface Balance {
 
 interface PayQuote {               // what the payer page renders
   code: string; merchantName: string; title: string; description?: string;
-  amountTRY: string; amountUSDC: string; fxRate: string; quoteExpiresAt: string;
+  amountTRY: string; amountUSDC: string; fxRate: string;
+  fxRateAt: string; fxSpread: string | null;  // shown on the receipt: what rate, fetched when, what spread
+  quoteExpiresAt: string;         // === expiresAt, always
   status: LinkStatus; expiresAt: string;
   receivedUSDC: string; shortfallUSDC?: string;
   rails: {
@@ -298,7 +305,7 @@ and nothing the payer can see carries it at all. Requests carry the full IBAN, `
 ### Payer (public, no auth)
 | Method | Path | Response |
 |---|---|---|
-| GET | `/pay/:code` | `PayQuote`. Re-quotes when the quote expired, status is `open`, and the link is **not** on-chain (on-chain quotes are locked). `code` is case-insensitive |
+| GET | `/pay/:code` | `PayQuote` with the link's locked quote — **never re-quotes**. Past `expiresAt` an open link comes back `expired`. `code` is case-insensitive |
 | POST | `/pay/:code/submitted` | `{ txHash }` → `202 { accepted: true }`. A hint to check this tx immediately; detection works without it |
 | GET | `/pay/:code/status` | `{ status, receivedUSDC, shortfallUSDC?, payment?, payments }` — poll every 2 s |
 | GET | `/pay/:code/agent` | **x402, testnet only, experimental.** See below |

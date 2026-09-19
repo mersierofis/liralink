@@ -81,7 +81,13 @@ export class PaymentLinkDto implements PaymentLink {
   amountTRY!: string;
   /** Decimal string, 7 dp. What the payer sends; locked at creation. */
   quotedUSDC!: string;
+  /** TRY per USDC at quote time, spread included. Locked. */
   fxRate!: string;
+  /** When that rate was fetched from its source. */
+  fxRateAt!: string;
+  /** Share of each USDC the source keeps as spread, 7 dp (e.g. "0.0050237"); null if not stated. */
+  fxSpread!: string | null;
+  /** === expiresAt, always: quotes are never re-quoted. */
   quoteExpiresAt!: string;
   status!: LinkStatus;
   expiresAt!: string;

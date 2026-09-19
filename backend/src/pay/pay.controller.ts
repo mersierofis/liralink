@@ -15,7 +15,10 @@ export class PayController {
     private readonly config: AppConfig,
   ) {}
 
-  /** GET /pay/:code → 200. `code` is case-insensitive; 404 unknown code. Never re-quotes. */
+  /**
+   * GET /pay/:code → 200. `code` is case-insensitive; 404 unknown code. Never re-quotes: past
+   * expiresAt the link comes back 'expired' with its original, locked quote.
+   */
   @Get(':code')
   @ApiOkResponse({ type: PayQuoteDto })
   async get(@Param('code') code: string): Promise<GetPayResponse> {

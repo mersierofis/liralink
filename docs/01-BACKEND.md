@@ -100,11 +100,18 @@ the public key. `/health` exposes it.
 - **Code:** 8 characters from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (no 0/O/1/I), retried on collision.
   The same code is the memo, the invoice `Symbol` and the URL path segment.
 - **Quote:** `quotedUSDC = amountTRY / rate`, rounded **up** to 7 dp so the payer never underpays.
+- **Never re-quoted.** `amountTRY`, `quotedUSDC` and `fxRate` (with `fxRateAt` and `fxSpread`) are
+  written once at creation and nothing recomputes them — no endpoint returns a new price for an
+  existing link. The quote lives exactly as long as the link: `quoteExpiresAt = expiresAt`, on-chain
+  or not. When it lapses the link expires, and the payer page says "This link has expired — ask the
+  merchant for a new one."
 - **On-chain invoice:** `POST /links` calls `create` on the contract best-effort, with
-  `deadline` = the ledger that corresponds to `expiresAt`. An on-chain link's quote is locked until
-  `expiresAt`, because the contract enforces the exact amount. Off-chain links re-quote on
-  `GET /pay/:code` after `QUOTE_TTL_MINUTES`.
-- **Expiry:** a minute cron moves `open` links past `expiresAt` to `expired`.
+  `deadline` = the ledger that corresponds to `expiresAt`, so the contract and the API expire the
+  quote at the same moment.
+- **Expiry on read:** every path that returns a link (`GET /links`, `GET /links/:id`, cancel,
+  `GET /pay/:code`) first moves the matching `open` links whose `expiresAt` has passed to `expired`,
+  in one conditional `UPDATE`. No response ever shows an open link with a lapsed quote. The payment
+  matcher must apply the same `expiresAt` check, not trust `status` alone.
 
 ## Payment listener — the heart
 

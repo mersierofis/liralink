@@ -17,6 +17,10 @@
 // - Base path `/api`. All bodies are JSON. Merchant endpoints need `Authorization: Bearer <jwt>`;
 //   payer (`/pay/...`) and system endpoints are public.
 // - Every non-2xx response body is an `ApiError`.
+// - Quotes are NEVER re-quoted. A link's amountTRY, quotedUSDC and fxRate are locked at creation
+//   and the quote lives exactly as long as the link: quoteExpiresAt === expiresAt, always. Once it
+//   passes, the link is 'expired' and the payer is told to ask the merchant for a new link. No
+//   endpoint ever returns a new price for an existing link.
 //
 // OPEN: fields marked `?` — the doc does not say whether "not set" is an absent key or `null`
 // (Prisma rows hold `null`). Consumers should treat both as "not set" until this is decided.
@@ -30,7 +34,12 @@ export type DecimalTRY = string;
 /** Decimal string, always 7 dp, zero included: "147.0588235", "0.0000000". */
 export type DecimalUSDC = string;
 /** TRY per 1 USDC, decimal string. */
-export type FxRate = string; // OPEN: precision not fixed in 00-PROJECT.md (anchor.md: anchor rates rounded down to 6 dp)
+export type FxRate = string;
+/**
+ * Share of each USDC the rate source keeps as its spread: decimal string, 7 dp, e.g. "0.0050237"
+ * (≈ 50 bps). Not money: a fraction, so it has no unit suffix.
+ */
+export type FxSpread = string; // OPEN: precision not fixed in 00-PROJECT.md (anchor.md: anchor rates rounded down to 6 dp)
 /** ISO 8601 UTC timestamp, e.g. "2026-09-19T10:00:00.000Z". */
 export type IsoTimestamp = string;
 /** Stellar account public key, "G…" (56 chars). */
@@ -140,8 +149,10 @@ export interface PaymentLink {
   description?: string;
   amountTRY: DecimalTRY;           // locked at creation
   quotedUSDC: DecimalUSDC;         // locked at creation, never recomputed from what is received
-  fxRate: FxRate;                  // at quote time
-  quoteExpiresAt: IsoTimestamp;    // on-chain links: === expiresAt (locked); otherwise QUOTE_TTL_MINUTES and /pay re-quotes
+  fxRate: FxRate;                  // at quote time, spread included; locked
+  fxRateAt: IsoTimestamp;          // when that rate was fetched from its source
+  fxSpread: FxSpread | null;       // the source's spread in that rate; "0.0000000" for mock; null if the source did not state it
+  quoteExpiresAt: IsoTimestamp;    // === expiresAt, always: the quote is never re-quoted
   status: LinkStatus;
   expiresAt: IsoTimestamp;         // default +24 h
   payUrl: string;                  // PAY_WEB_BASE_URL + '/' + code
@@ -264,9 +275,11 @@ export interface PayQuote {
   description?: string;
   amountTRY: DecimalTRY;
   amountUSDC: DecimalUSDC;         // the link's quotedUSDC — what the payer must send (02-PAY-WEB.md)
-  fxRate: FxRate;
-  quoteExpiresAt: IsoTimestamp;
-  status: LinkStatus;
+  fxRate: FxRate;                  // the locked rate the payer is quoted, spread included
+  fxRateAt: IsoTimestamp;          // when that rate was fetched — shown on the receipt
+  fxSpread: FxSpread | null;       // the spread in that rate — shown on the receipt
+  quoteExpiresAt: IsoTimestamp;    // === expiresAt, always
+  status: LinkStatus;              // 'expired': "This link has expired — ask the merchant for a new one." Never a new price
   expiresAt: IsoTimestamp;
   receivedUSDC: DecimalUSDC;
   shortfallUSDC?: DecimalUSDC;     // only while status is 'underpaid'
@@ -460,8 +473,8 @@ export interface GetUnallocatedResponse extends Paginated<UnallocatedCredit> {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * GET /pay/:code → 200. Re-quotes when the quote expired, status is 'open', and the link is not
- * on-chain (on-chain quotes are locked). 404 unknown code.
+ * GET /pay/:code → 200. Never re-quotes: returns the link's locked quote. An open link past
+ * expiresAt comes back as status 'expired' (it is expired on read). 404 unknown code.
  */
 export type GetPayResponse = PayQuote;
 

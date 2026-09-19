@@ -24,8 +24,9 @@ export class LinksService {
 
   /**
    * Quote once, lock forever: amountTRY (what the merchant is owed) and quotedUSDC (what the payer
-   * sends) are fixed here, from the rate at this moment, and nothing ever recomputes them. The
-   * quote therefore stays valid for the link's whole life: quoteExpiresAt = expiresAt.
+   * sends) are fixed here, from the rate at this moment, and nothing ever recomputes them. Quotes
+   * are never re-quoted: the quote lives exactly as long as the link (quoteExpiresAt = expiresAt),
+   * and when it lapses the link expires.
    * The rate's source, timestamp, mid rate and spread are stored with it for the receipt.
    * No rate, no link: if the rate cannot be fetched this is a 503, never a stale or guessed rate.
    */
@@ -66,6 +67,7 @@ export class LinksService {
   }
 
   async list(merchant: MerchantRow, query: GetLinksQuery): Promise<Paginated<PaymentLink>> {
+    await this.expireDue({ merchantId: merchant.id });
     const where = { merchantId: merchant.id, ...(query.status && { status: query.status }) };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.paymentLink.findMany({
@@ -101,7 +103,20 @@ export class LinksService {
   async findByCode(rawCode: string): Promise<LinkWithPayments | null> {
     const code = normalizeLinkCode(rawCode);
     if (!code) return null;
+    await this.expireDue({ code });
     return this.prisma.paymentLink.findUnique({ where: { code }, include: withPayments });
+  }
+
+  /**
+   * Expire on read: every path that returns a link first moves the matching `open` links whose
+   * expiresAt has passed to `expired`, so no response ever shows an open link with a lapsed quote.
+   * One conditional UPDATE; a link that is no longer `open` is never touched.
+   */
+  private async expireDue(where: Prisma.PaymentLinkWhereInput): Promise<void> {
+    await this.prisma.paymentLink.updateMany({
+      where: { ...where, status: 'open', expiresAt: { lte: new Date() } },
+      data: { status: 'expired' },
+    });
   }
 
   private async freshRate(): Promise<FxQuote> {
@@ -117,6 +132,7 @@ export class LinksService {
 
   private async findOwn(merchant: MerchantRow, id: string): Promise<LinkWithPayments> {
     // Another merchant's link is indistinguishable from a missing one.
+    if (isUuid(id)) await this.expireDue({ id, merchantId: merchant.id });
     const row = isUuid(id)
       ? await this.prisma.paymentLink.findFirst({ where: { id, merchantId: merchant.id }, include: withPayments })
       : null;

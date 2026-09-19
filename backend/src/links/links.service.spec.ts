@@ -58,6 +58,7 @@ describe('LinksService quote locking', () => {
         return row;
       }),
       findFirst: jest.fn(async ({ where }: { where: { id: string } }) => rows.get(where.id) ?? null),
+      updateMany: jest.fn(async () => ({ count: 0 })), // expire-on-read; nothing is past expiresAt here
     },
   } as unknown as PrismaService;
 
@@ -94,6 +95,11 @@ describe('LinksService quote locking', () => {
     });
   });
 
+  it('returns the rate, when it was fetched and the spread on the link', async () => {
+    const link = await service.create(merchant, { title: 'x', amountTRY: '10.00' });
+    expect(link).toMatchObject({ fxRate: '34.0000000', fxRateAt: '2026-09-19T11:26:33.000Z', fxSpread: '0.0050237' });
+  });
+
   it('never recomputes the quote after the rate moves', async () => {
     const created = await service.create(merchant, { title: 'Lemon order #1042', amountTRY: '5000.00' });
     rate = '40.00';
@@ -103,6 +109,7 @@ describe('LinksService quote locking', () => {
     expect(read.amountTRY).toBe('5000.00');
     expect(read.quotedUSDC).toBe('147.0588236');
     expect(read.fxRate).toBe('34.0000000');
+    expect(read.fxRateAt).toBe(created.fxRateAt);
     expect(fx.getRate).toHaveBeenCalledTimes(1); // reading a link never asks for a rate
   });
 

@@ -1,6 +1,6 @@
 import type { PayQuote } from '../contract/api.types';
 import type { AppConfig } from '../config/app-config';
-import { formatRate, formatTRY, formatUSDC } from '../common/money';
+import { formatRate, formatSpread, formatTRY, formatUSDC } from '../common/money';
 import { type LinkWithPayments, toPayment } from '../links/link.mapper';
 
 /** What the payer page renders. No merchant id, no IBAN: only what a payer needs to pay. */
@@ -15,6 +15,8 @@ export function toPayQuote(row: LinkWithPayments, config: AppConfig): PayQuote {
     amountTRY: formatTRY(row.amountTRY),
     amountUSDC: formatUSDC(row.quotedUSDC),
     fxRate: formatRate(row.fxRate),
+    fxRateAt: row.fxRateAt.toISOString(),
+    fxSpread: row.fxSpread === null ? null : formatSpread(row.fxSpread),
     quoteExpiresAt: row.quoteExpiresAt.toISOString(),
     status: row.status,
     expiresAt: row.expiresAt.toISOString(),

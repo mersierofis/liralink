@@ -3,7 +3,7 @@ import { createTestApp, registerMerchant, resetDb, type TestApp } from './helper
 
 const HOUR = 3_600_000;
 const LINK_KEYS = [
-  'id', 'code', 'merchantId', 'merchantName', 'title', 'amountTRY', 'quotedUSDC', 'fxRate', 'quoteExpiresAt',
+  'id', 'code', 'merchantId', 'merchantName', 'title', 'amountTRY', 'quotedUSDC', 'fxRate', 'fxRateAt', 'fxSpread', 'quoteExpiresAt',
   'status', 'expiresAt', 'payUrl', 'receivedUSDC', 'payments', 'onchain', 'createdAt',
 ].sort();
 
@@ -40,6 +40,8 @@ describe('Payment links (e2e)', () => {
         amountTRY: '5000.00',
         quotedUSDC: '147.0588236', // 5000 / 34 rounded UP to 7 dp
         fxRate: '34.0000000',
+        fxRateAt: '2026-09-19T10:00:00.000Z',
+        fxSpread: '0.0050000',
         status: 'open',
         receivedUSDC: '0.0000000',
         payments: [],
@@ -107,14 +109,16 @@ describe('Payment links (e2e)', () => {
   });
 
   describe('FX rate', () => {
-    it('stores what was quoted and when, without adding fields to the API response', async () => {
+    it('stores what was quoted and when, and returns rate, time and spread on the link and the payer quote', async () => {
       t.fx.rate = '48.540000';
       t.fx.midRate = '48.785077';
       t.fx.spread = '0.0050237';
       const link = (await createLink().expect(201)).body;
 
-      expect(Object.keys(link).sort()).toEqual(LINK_KEYS); // the contract has no fields for these yet
-      expect(link).toMatchObject({ quotedUSDC: '103.0078286', fxRate: '48.5400000' });
+      const receipt = { fxRate: '48.5400000', fxRateAt: '2026-09-19T10:00:00.000Z', fxSpread: '0.0050237' };
+      expect(link).toMatchObject({ quotedUSDC: '103.0078286', ...receipt });
+      expect((await t.http().get(`/api/links/${link.id}`).set(auth)).body).toMatchObject(receipt);
+      expect((await t.http().get(`/api/pay/${link.code}`)).body).toMatchObject({ amountUSDC: '103.0078286', ...receipt });
 
       const row = await t.prisma.paymentLink.findUniqueOrThrow({ where: { id: link.id } });
       expect(row.fxSource).toBe('anchor');
@@ -138,6 +142,38 @@ describe('Payment links (e2e)', () => {
 
       t.fx.failure = null;
       await createLink().expect(201); // recovers as soon as the source does
+    });
+  });
+
+  describe('expiry: the quote is never re-quoted', () => {
+    const expire = (id: string) =>
+      t.prisma.paymentLink.update({ where: { id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+
+    it('an open link past expiresAt reads as expired, everywhere, with its original quote', async () => {
+      const link = (await createLink().expect(201)).body;
+      await expire(link.id);
+      t.fx.rate = '50.00'; // a new rate must not appear anywhere
+
+      const pay = (await t.http().get(`/api/pay/${link.code}`).expect(200)).body;
+      expect(pay).toMatchObject({ status: 'expired', amountUSDC: link.quotedUSDC, fxRate: link.fxRate, fxRateAt: link.fxRateAt });
+      const byId = (await t.http().get(`/api/links/${link.id}`).set(auth).expect(200)).body;
+      expect(byId).toMatchObject({ status: 'expired', quotedUSDC: link.quotedUSDC, quoteExpiresAt: link.quoteExpiresAt });
+      expect((await t.http().get('/api/links?status=open').set(auth)).body.total).toBe(0);
+      expect((await t.http().get('/api/links?status=expired').set(auth)).body.total).toBe(1);
+    });
+
+    it('an expired link cannot be cancelled', async () => {
+      const link = (await createLink().expect(201)).body;
+      await expire(link.id);
+      const res = await t.http().post(`/api/links/${link.id}/cancel`).set(auth).expect(409);
+      expect(res.body.message).toBe('Link is expired; only an open link can be cancelled');
+    });
+
+    it('never expires a link that is no longer open', async () => {
+      const link = (await createLink().expect(201)).body;
+      await t.prisma.paymentLink.update({ where: { id: link.id }, data: { status: 'paid' } });
+      await expire(link.id);
+      expect((await t.http().get(`/api/pay/${link.code}`)).body.status).toBe('paid');
     });
   });
 
@@ -234,7 +270,7 @@ describe('Payment links (e2e)', () => {
 
       expect(Object.keys(q).sort()).toEqual(
         [
-          'code', 'merchantName', 'title', 'description', 'amountTRY', 'amountUSDC', 'fxRate', 'quoteExpiresAt',
+          'code', 'merchantName', 'title', 'description', 'amountTRY', 'amountUSDC', 'fxRate', 'fxRateAt', 'fxSpread', 'quoteExpiresAt',
           'status', 'expiresAt', 'receivedUSDC', 'rails', 'asset', 'network', 'payments',
         ].sort(),
       );
