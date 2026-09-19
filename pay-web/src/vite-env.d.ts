@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_HORIZON_URL: string
   readonly VITE_EXPLORER_TX_URL: string
   readonly VITE_CONTRACT_RAIL: string
+  /** Code of the live demo link for "Try demo link" on /; empty hides the button. */
+  readonly VITE_DEMO_LINK_CODE?: string
   /** Secondary path — set true + App ID to show "Sign in with email". Kill by 01:00 if broken. */
   readonly VITE_PRIVY_ENABLED?: string
   /** Public Privy App ID only — never put App Secret in VITE_*. */

@@ -27,6 +27,12 @@ Mock mode: set `VITE_USE_MOCK=true`, then `/p/DEMO0001` (open), `/p/DEMO0002` (p
 5. Add a **USDC** trustline for issuer `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` (Lab → Change Trust).
 6. Get testnet USDC from [faucet.circle.com](https://faucet.circle.com) → Stellar.
 
+## Demo link
+
+`VITE_DEMO_LINK_CODE` sets the "Try demo link" button on `/` (the "No payment link" page), e.g.
+`VITE_DEMO_LINK_CODE=Y82H54DH` → `/p/Y82H54DH`. It is read at build time, so a new code needs a
+redeploy but no code change. Empty (the default) hides the button.
+
 ## Privy email path (secondary)
 
 Freighter stays the stage demo. Optional fallback behind env flags (see `docs/spikes/privy.md`):
