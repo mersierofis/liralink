@@ -59,6 +59,8 @@ enum AnchorBlockedReason {
   missing_iban
   outside_anchor_limits
   anchor_withdraw_disabled
+  pending_customer_info_update
+  pending_transaction_info_update
 }
 
 enum PaymentAttemptReason {
@@ -87,6 +89,10 @@ model Merchant {
   iban            String? // full IBAN; returned only to the merchant themself
   autoSavePercent Int      @default(0)
   unallocatedUSDC Decimal  @default(0) @db.Decimal(20, 7)
+  // SEP-12 registration at the anchor, and the IBAN + home domain it was made for (anchor.md step 4)
+  sep12CustomerId String?
+  sep12Iban       String?
+  sep12HomeDomain String?
   createdAt       DateTime @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime @updatedAt @db.Timestamptz(3)
 
@@ -128,8 +134,9 @@ model PaymentLink {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  merchant Merchant  @relation(fields: [merchantId], references: [id])
-  payments Payment[]
+  merchant   Merchant    @relation(fields: [merchantId], references: [id])
+  payments   Payment[]
+  settlement Settlement?
 
   @@index([merchantId, createdAt])
 }
@@ -186,7 +193,8 @@ model UnallocatedCredit {
 model Settlement {
   id             String               @id @default(uuid()) @db.Uuid
   merchantId     String               @db.Uuid
-  paymentId      String               @unique @db.Uuid
+  linkId         String               @unique @db.Uuid // internal: one settlement per paid link, enforced here
+  paymentId      String               @unique @db.Uuid // the payment that completed the link
   amountUSDC     Decimal              @db.Decimal(20, 7)
   amountTRY      Decimal              @db.Decimal(20, 7)
   fxRate         Decimal              @db.Decimal(20, 7)
@@ -195,17 +203,27 @@ model Settlement {
   netTRY         Decimal?             @db.Decimal(20, 7)
   provider       AnchorProvider
   status         SettleStatus         @default(pending)
-  anchorRef      String?
+  anchorRef      String? // the anchor's transaction id
+  // Resumable anchor state (internal, never exposed):
+  anchorMemo     String? // the merchant memo of the SEP-10 identity that opened the withdrawal
+  anchorStatus   String? // last status the anchor reported
+  payTo          String? // withdraw_anchor_account
+  payMemo        String? // memo the anchor asked for
+  payMemoType    String? // id | text | hash
+  paymentXdr     String? // the signed USDC payment, stored BEFORE submission (double-spend guard)
+  paymentTxHash  String?
   failReason     SettleFailReason?
   blockedReason  AnchorBlockedReason? // internal only, never exposed by the API
   interactiveUrl String?
   createdAt      DateTime             @default(now()) @db.Timestamptz(3)
   completedAt    DateTime?            @db.Timestamptz(3)
 
-  merchant Merchant @relation(fields: [merchantId], references: [id])
-  payment  Payment  @relation(fields: [paymentId], references: [id])
+  merchant Merchant    @relation(fields: [merchantId], references: [id])
+  link     PaymentLink @relation(fields: [linkId], references: [id])
+  payment  Payment     @relation(fields: [paymentId], references: [id])
 
   @@index([merchantId, createdAt])
+  @@index([status])
 }
 
 model Withdrawal {

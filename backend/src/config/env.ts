@@ -98,6 +98,10 @@ export const envSchema = z
     path: ['ANCHOR_HOME_DOMAIN'],
     message: 'required when FX_PROVIDER is anchor',
   })
+  .refine((e) => e.ANCHOR_PROVIDER === 'mock' || e.ANCHOR_HOME_DOMAIN !== undefined, {
+    path: ['ANCHOR_HOME_DOMAIN'],
+    message: 'required when ANCHOR_PROVIDER is sep6 or sep24',
+  })
   .refine((e) => e.FX_PROVIDER !== 'mock' || e.FX_MOCK_RATE_TRY_PER_USDC !== undefined, {
     path: ['FX_MOCK_RATE_TRY_PER_USDC'],
     message: 'required when FX_PROVIDER is mock',

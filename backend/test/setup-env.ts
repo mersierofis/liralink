@@ -22,5 +22,6 @@ Object.assign(process.env, {
   FX_PROVIDER: 'mock',
   FX_MOCK_RATE_TRY_PER_USDC: '34.00',
   ANCHOR_PROVIDER: 'mock',
+  ANCHOR_MOCK_DELAY_MS: '20',
   LINK_DEFAULT_EXPIRY_HOURS: '24',
 });

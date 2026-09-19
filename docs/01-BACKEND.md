@@ -193,7 +193,7 @@ the public key. `/health` exposes it.
 
 ## Settlement
 
-`payment.detected` for a now-`paid` link → create a `Settlement`:
+A `paid` link → exactly **one** `Settlement` (unique `linkId`), on the payment that completed it:
 - `fxRate = link.fxRate`, `amountTRY = link.amountTRY × (100 − autoSavePercent)%`,
   `savedUSDC = link.quotedUSDC × autoSavePercent%`, `amountUSDC` = the remainder.
 - `provider` = the current `ANCHOR_PROVIDER`; the settlement **always continues on the provider it
@@ -201,7 +201,13 @@ the public key. `/health` exposes it.
 - `pending → processing → completed`, or a terminal `failed` with `failReason`. A thrown error
   (network, Horizon, anchor 5xx) leaves the settlement unchanged for the next run — a transient
   error never marks money as failed.
-- A minute reconciler (and a pass at boot) resumes every unfinished settlement.
+- **Two paths, one outcome.** `payment.detected` is the fast path (payment → payout in ~13 s on
+  testnet). It is in-process and fires once, so a crash between payment and settlement would lose
+  it: a **job** (at boot, then every minute) is the guarantee — it creates the settlement of every
+  `paid` link that has none and resumes every `pending` / `processing` one. Event, job and replays
+  racing all land on the same row (unique `linkId`) and the same anchor withdrawal.
+- `blocked` outcomes (`missing_iban`, `outside_anchor_limits`, …) keep the settlement `pending`
+  with an internal `blockedReason`; the job retries, and it resumes by itself once the cause goes.
 - Within one process a settlement never has two adapter calls in flight. Multiple instances would
   need a DB lock around the payment step.
 
@@ -210,14 +216,19 @@ the public key. `/health` exposes it.
 ```ts
 interface AnchorAdapter {
   name: 'mock' | 'sep6' | 'sep24';
-  settle(settlement, merchant): Promise<SettleOutcome>;   // resumable: safe to call again
-  payoutTRY?(withdrawal): Promise<{ ref: string }>;        // balance mode only
+  settlementMode: 'balance' | 'auto_payout';
+  settle(ctx): Promise<SettleOutcome>;   // resumable: safe to call again; throwing = transient
 }
+type SettleOutcome = completed(completion) | failed(failReason) | blocked(blockedReason) | waiting;
 ```
-- `mock`: completes after `ANCHOR_MOCK_DELAY_MS`, deterministic `mock-…` refs, balance mode.
-- `sep6`: the TRY rail, auto-payout. `sep24`: interactive, auto-payout.
-- Which providers are balance-mode is one explicit list; a new balance-mode provider must be added
-  there or its settlements land in `paidOutTRY`.
+- The adapter persists every step through `ctx.progress` **before** the next one (withdrawal id,
+  pay-to details, the signed payment XDR), so a crash at any point resumes without repeating it.
+- `mock`: completes after `ANCHOR_MOCK_DELAY_MS` (default 3 s), `mock-<id>` refs, balance mode.
+- `sep6`: the TRY rail, auto-payout — built whenever `ANCHOR_HOME_DOMAIN` is set, so its settlements
+  continue after a roll back to `mock`. `sep24`: not built yet; its settlements stay `pending`.
+- Which providers are balance-mode is one explicit list (`BALANCE_MODE_PROVIDERS` in
+  `balance.service.ts`); a new balance-mode provider must be added there or its settlements land in
+  `paidOutTRY`.
 
 Full SEP flows, the double-spend guard and the anchor quirks: [`anchor.md`](anchor.md).
 

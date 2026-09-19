@@ -8,8 +8,9 @@ import { ListenerModule } from './listener/listener.module';
 import { MerchantsModule } from './merchants/merchants.module';
 import { PayModule } from './pay/pay.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { SettlementsModule } from './settlements/settlements.module';
 
 @Module({
-  imports: [ConfigModule, PrismaModule, FxModule, AuthModule, MerchantsModule, LinksModule, PayModule, ListenerModule, HealthModule],
+  imports: [ConfigModule, PrismaModule, FxModule, AuthModule, MerchantsModule, LinksModule, PayModule, ListenerModule, SettlementsModule, HealthModule],
 })
 export class AppModule {}

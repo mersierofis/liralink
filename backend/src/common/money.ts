@@ -79,6 +79,28 @@ export function isUSDCAmount(a: unknown): a is string {
   return typeof a === 'string' && PLAIN_DECIMAL.test(a) && parse(a).decimalPlaces() <= USDC_DP;
 }
 
+/** a × b / c, rounded DOWN to `dp` decimal places. Exact until the final rounding. */
+export function mulDivDown(a: MoneyLike, b: MoneyLike, c: MoneyLike, dp: number): string {
+  const divisor = parse(c);
+  if (divisor.lte(0)) throw new Error('mulDivDown: divisor must be > 0');
+  return parse(a).times(parse(b)).div(divisor).toDecimalPlaces(dp, Decimal.ROUND_DOWN).toFixed(dp);
+}
+
+/** Rounds DOWN to whole kuruş (2 dp): what an anchor may report with more precision. */
+export function floorTRY(value: MoneyLike): string {
+  return parse(value).toDecimalPlaces(TRY_DP, Decimal.ROUND_DOWN).toFixed(TRY_DP);
+}
+
+/** a + b as a TRY string (2 dp). Throws if either operand has more than 2 dp. */
+export function addTRY(a: MoneyLike, b: MoneyLike): string {
+  return formatTRY(parse(formatTRY(a)).plus(parse(formatTRY(b))).toFixed());
+}
+
+/** a − b as a TRY string (2 dp). May be negative (a balance that is over-reserved shows as such). */
+export function subtractTRY(a: MoneyLike, b: MoneyLike): string {
+  return parse(formatTRY(a)).minus(parse(formatTRY(b))).toFixed(TRY_DP);
+}
+
 /** True when `amountTRY` is a valid link amount: exactly 2 dp, 1.00–1,000,000.00. */
 export function isValidLinkAmountTRY(amountTRY: string): boolean {
   if (!TRY_INPUT.test(amountTRY)) return false;

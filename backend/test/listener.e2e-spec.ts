@@ -2,54 +2,8 @@ import { AppConfig } from '../src/config/app-config';
 import { toInboundOp } from '../src/listener/inbound-op';
 import { type PaymentDetected, PaymentEvents } from '../src/listener/payment-events';
 import { PaymentProcessor } from '../src/listener/payment-processor';
-import { FakePaymentSource, createTestApp, registerMerchant, resetDb, type TestApp } from './helpers';
+import { CIRCLE, FakePaymentSource, IMPOSTOR, PAYER, QUOTED, createTestApp, record, registerMerchant, resetDb, type TestApp } from './helpers';
 
-const CIRCLE = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
-const IMPOSTOR = 'GCLCZEQZ2THTEDAOFI66LACNPLY4OBKN7VKLEZFMBIHYKYQOW2W7T3Z6';
-const PAYER = 'GDKC65WHV2UPVEUDG4ZPCJEHIW3C7KXOSZ4TV2O3GIHVDWUHVKOF26RL';
-const QUOTED = '147.0588236'; // 5000.00 TRY at 34.00, rounded up
-
-let seq = 0;
-/**
- * A Horizon payments record exactly as the SDK hands it over with .join('transactions'): the
- * transaction in `transaction_attr`, its linked `ledger` a function and the number in `ledger_attr`.
- */
-function record(
-  platform: string,
-  p: { code?: string | null; amount?: string; asset?: 'usdc' | 'xlm' | 'spoof'; tx?: string; paidAt?: Date; from?: string; to?: string },
-): Record<string, unknown> {
-  seq++;
-  const token = String(9_000_000_000 + seq);
-  const asset =
-    p.asset === 'xlm'
-      ? { asset_type: 'native' }
-      : { asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: p.asset === 'spoof' ? IMPOSTOR : CIRCLE };
-  const code = p.code === undefined ? null : p.code;
-  const createdAt = (p.paidAt ?? new Date()).toISOString().replace(/\.\d{3}Z$/, 'Z');
-  const txHash = (p.tx ?? `tx${seq}`).padEnd(64, '0');
-  return {
-    id: token,
-    paging_token: token,
-    type: 'payment',
-    transaction_successful: true,
-    created_at: createdAt,
-    transaction_hash: txHash,
-    from: p.from ?? PAYER,
-    to: p.to ?? platform,
-    amount: p.amount ?? QUOTED,
-    ...asset,
-    transaction_attr: {
-      hash: txHash,
-      ledger: () => undefined,
-      ledger_attr: 4_759_000 + seq,
-      created_at: createdAt,
-      successful: true,
-      memo_type: code === null ? 'none' : 'text',
-      memo_bytes: code === null ? null : Buffer.from(code).toString('base64'),
-      memo: code,
-    },
-  };
-}
 
 describe('Horizon payment listener (e2e)', () => {
   let t: TestApp;
