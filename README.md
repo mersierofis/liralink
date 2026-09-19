@@ -39,7 +39,8 @@ is paid out to the merchant's IBAN. The merchant never touches crypto. **Testnet
 
 Soroban invoice contract on testnet:
 
-- **Live contract: TBD — deployed during the event**
+- **Live contract:** `CCXHJK4Y667EDKM5H3CXKP26V3LRVOH6NULYS5K6T4BKQADSSFL23BIA`
+  ([stellar.expert](https://stellar.expert/explorer/testnet/contract/CCXHJK4Y667EDKM5H3CXKP26V3LRVOH6NULYS5K6T4BKQADSSFL23BIA))
 - Prototype contract (pre-event reference — NOT used by this build):
   `CDKZYQI4HI347ZVAMXT2XPHLYDSDKN6ERELKASGJDII6AQU6ROFQ45EJ`
   ([stellar.expert](https://stellar.expert/explorer/testnet/contract/CDKZYQI4HI347ZVAMXT2XPHLYDSDKN6ERELKASGJDII6AQU6ROFQ45EJ))

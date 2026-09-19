@@ -370,7 +370,26 @@ contract. Storage and TTL strategy: [`architecture.md`](architecture.md).
 
 **Testnet deployments:**
 
-Live contract: TBD — deployed during the event
+Live contract (used by this build):
+
+| Field | Value |
+|---|---|
+| Contract ID | `CCXHJK4Y667EDKM5H3CXKP26V3LRVOH6NULYS5K6T4BKQADSSFL23BIA` |
+| Admin | platform account `GBOOMKF77HER6GYFMBCVRXCGZ5E57AKDZAN625PBJPPMBT7KVSXFZONC` (the live API's `PLATFORM_ACCOUNT_SECRET`) |
+| Deployer | `GB6KUWKEDRC7RPYBUBYJWZ5DL2E7JKSBTEHLOU4BNB2DCMDY2ECTATII` (deploy only; holds no role in the contract) |
+| Constructor `token` | USDC SAC `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` |
+| Wasm hash | `f95d67feb7dd55ca72eaf49bc0c7dc61e1955b83fc65e273f2d3875c47370950` (built from `contracts/invoice`) |
+| Deploy tx | `a2b36527994220ec9e1c91a015eac95e31dc87ece5d5326b4c896ecb572944f3` |
+| Explorer | https://stellar.expert/explorer/testnet/contract/CCXHJK4Y667EDKM5H3CXKP26V3LRVOH6NULYS5K6T4BKQADSSFL23BIA |
+
+Redeploy (from `contracts/`):
+
+```bash
+stellar contract build
+stellar contract deploy --wasm target/wasm32v1-none/release/invoice.wasm \
+  --source <deployer> --network testnet \
+  -- --token CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA --admin <platform account G…>
+```
 
 Prototype contract (pre-event reference — NOT used by this build):
 
@@ -382,8 +401,8 @@ Prototype contract (pre-event reference — NOT used by this build):
 | Wasm hash | `f95d67feb7dd55ca72eaf49bc0c7dc61e1955b83fc65e273f2d3875c47370950` |
 | Explorer | https://stellar.expert/explorer/testnet/contract/CDKZYQI4HI347ZVAMXT2XPHLYDSDKN6ERELKASGJDII6AQU6ROFQ45EJ |
 
-Deploying during the event creates a new contract ID: fill in the live contract line above and set
-`INVOICE_CONTRACT_ID`. Invoices do not carry over from the prototype.
+The live contract is a fresh deployment of the same wasm: set `INVOICE_CONTRACT_ID` to its ID.
+Invoices do not carry over from the prototype.
 
 Prototype contract (pre-event reference — NOT used by this build):
 `CBN6Q5MPD3BUXAZNG3VPYWQ42EUAOBGDFW3WWDJVGTMRRJFZO7EBJVWE`. Do not use it: it required merchant auth
