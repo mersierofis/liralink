@@ -1,14 +1,8 @@
 import { PrivyProvider } from '@privy-io/react-auth'
 import type { ReactNode } from 'react'
+import { isPrivyEnabled } from './enabled'
 
-/** Kill switch + App ID only — never put App Secret in the frontend. */
-export function isPrivyEnabled(): boolean {
-  return (
-    import.meta.env.VITE_PRIVY_ENABLED === 'true' &&
-    Boolean(import.meta.env.VITE_PRIVY_APP_ID?.trim())
-  )
-}
-
+/** Only mounted by the lazy `PrivyEmailFlow` chunk — never import this from eagerly loaded code. */
 export function PrivyGate({ children }: { children: ReactNode }) {
   const appId = import.meta.env.VITE_PRIVY_APP_ID?.trim()
   if (!isPrivyEnabled() || !appId) return <>{children}</>
