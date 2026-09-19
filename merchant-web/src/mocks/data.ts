@@ -12,6 +12,8 @@ export const MOCK_TOKEN = 'mock-jwt-token'
 // rotated out of the repo (backend/.env SEED_DEMO_PASSWORD, ask Hasan).
 export const MOCK_PASSWORD = 'mock-password'
 const FX_RATE = '34.0000000'
+const FX_RATE_AT = '2026-09-19T12:00:00Z' // when the rate was fetched; fixed so the mock reads the same on every run
+const FX_SPREAD = '0.0050237' // ~50 bps, as the real anchor reports it (anchor.md)
 const PAY_WEB_BASE = 'http://localhost:5174/p'
 
 function hex(len: number) {
@@ -100,6 +102,8 @@ function makePaidLink(opts: {
     amountTRY: opts.amountTRY,
     quotedUSDC,
     fxRate: FX_RATE,
+    fxRateAt: FX_RATE_AT,
+    fxSpread: FX_SPREAD,
     quoteExpiresAt: isoDaysAgo(opts.daysAgo - 1),
     status: 'paid',
     expiresAt: isoDaysAgo(opts.daysAgo - 1),
@@ -114,6 +118,7 @@ function makePaidLink(opts: {
 
 function makeOpenLink(opts: { code: string; title: string; amountTRY: string; daysAgo: number }): PaymentLink {
   const quotedUSDC = quoteUSDC(opts.amountTRY)
+  const expiresAt = new Date(Date.now() + 24 * 3_600_000).toISOString()
   return {
     id: `link-${opts.code}`,
     code: opts.code,
@@ -123,9 +128,11 @@ function makeOpenLink(opts: { code: string; title: string; amountTRY: string; da
     amountTRY: opts.amountTRY,
     quotedUSDC,
     fxRate: FX_RATE,
-    quoteExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    fxRateAt: FX_RATE_AT,
+    fxSpread: FX_SPREAD,
+    quoteExpiresAt: expiresAt, // never re-quoted: quoteExpiresAt === expiresAt
     status: 'open',
-    expiresAt: new Date(Date.now() + 24 * 3_600_000).toISOString(),
+    expiresAt,
     payUrl: `${PAY_WEB_BASE}/${opts.code}`,
     receivedUSDC: '0',
     payments: [],
