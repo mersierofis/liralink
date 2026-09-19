@@ -209,7 +209,7 @@ export function PayPage() {
   if (!code) {
     return (
       <Shell>
-        <ErrorState title="No link" message="Open a payment link like /p/DEMO0001." />
+        <ErrorState title="No link" message="Open the payment link the merchant shared with you." />
       </Shell>
     )
   }
