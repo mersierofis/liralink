@@ -30,7 +30,7 @@ pubnet.
 ```
 ANCHOR_PROVIDER=sep6
 ANCHOR_HOME_DOMAIN=tr-mock-anchor.fly.dev
-FX_PROVIDER=anchor        # strongly recommended — see "Why FX_PROVIDER=anchor"
+FX_PROVIDER=anchor        # the default (empty means anchor) — see "Why FX_PROVIDER=anchor"
 ```
 
 ### Flow
@@ -129,11 +129,23 @@ anchor's never agree, and small links fall under the 1 USDC minimum for no reaso
 `GET {ANCHOR_QUOTE_SERVER}/price?sell_asset=stellar:USDC:<issuer>&buy_asset=iso4217:TRY&sell_amount=1&context=sep6`.
 - Rate = `1 / total_price`. `total_price` **includes** the spread, `price` does not, and the spread
   is what the settlement is really charged.
-- Rounded **down** to 6 dp, so the quoted USDC is never short. Cached 5 minutes; `GET /fx` reports
-  `source: 'anchor'`.
-- On any failure (no quote server, non-2xx, unparseable body) log an ERROR and **fall back to the
-  mock rate** — link creation never fails because the anchor is down.
-- Prices are public here; if an anchor demands the JWT, retry once with it on `401/403`.
+- Rounded **down** to 6 dp, so the quoted USDC is never short. Fetched **fresh for every link** —
+  no rate cache; only the `stellar.toml` discovery is cached (1 h). `GET /fx` (not built yet) will
+  report `source: 'anchor'`.
+- **No rate, no link.** On any failure — `stellar.toml` unreadable or for another network, no https
+  `ANCHOR_QUOTE_SERVER`, network error or 10 s timeout, a redirect, non-2xx, a body that is not
+  JSON or over 64 KB, `total_price` / `price` missing or not a plain decimal > 0, a `sell_amount`
+  other than the 1 asked for — the provider logs an ERROR and `POST /links` answers
+  `503 "FX rate unavailable, no link created: …"`. There is **no fallback** to the mock rate or to
+  an earlier anchor rate: a guessed or stale rate would put the merchant's figure and the anchor's
+  apart without anyone noticing.
+- Prices are public here. An anchor that demands a SEP-10 JWT (`401/403`) fails like any non-2xx
+  until the SEP-10 session exists (it arrives with the `sep6` adapter).
+- **What the link stores**, once, next to the locked quote, so a receipt can show what was quoted
+  and when: `fxSource`, `fxRateAt` (when the price was fetched — `/price` carries no timestamp of
+  its own), `fxMidRate` (`1 / price`, 6 dp down), `fxSpread` (`fee.total / sell_amount`, the share of
+  each USDC the anchor keeps — `0.0050237` ≈ 50 bps; `null` if the fee is not stated in USDC) and
+  `fxQuoteRaw` (the `/price` body, verbatim). None of these is in the API contract yet.
 
 This is an *indicative* price, not a firm quote: no `quote_id` goes to the withdrawal, so the anchor
 re-prices at settlement time (see *Open design items*).
@@ -181,6 +193,8 @@ The adapter follows what the anchor **does**, not what its docs say. Measured on
 | User identity | Skill examples: bare `?account=G…` | Memos supported (`sub` `G…:memo`); transactions scoped per `sub` — a withdrawal opened as memo A is `404` for memo B and for the bare account. Memo logins work on an account that already logged in without one | One anchor user per merchant; `anchorMemo` stored per settlement |
 | `type` param | `type=bank_account` | Deprecated; `funding_method=bank_account` accepted | Use `funding_method` |
 | Rate source | Reflector oracle + 50 bps spread | Confirmed by the anchor's `/health` (`source: reflector`, `static_fallback` if the oracle is down). ~48.41 TRY/USDC; `total_price 0.0206568891` ⇒ 48.409999 | SEP-38 `/price` → `1 / total_price` |
+| `total_price` precision | SEP-38: `total_price` = `sell_amount / buy_amount` | It is computed from `buy_amount` **already rounded to 2 dp**: 2026-09-19 11:26 UTC, `buy_amount 48.54`, `total_price 0.0206015657` ⇒ 48.540000, while `/health` showed `sell_rate 48.541152` | Accept it: the rate can only come out lower (≤ 0.01 TRY per USDC), so `quotedUSDC` errs towards the payer sending slightly more, never less |
+| Spread | `fee` in the sell asset | `fee.asset` = our USDC, `fee.total 0.0050237` per 1 USDC, one `details` entry `"spread"`, `"50 bps from the USD/TRY mid rate"` | Stored as `fxSpread`; `1 / price` (48.785077) is the mid rate |
 | Persistence | "Assume it can be reset before events" | — | Re-check SEP-12 with a GET before every withdrawal; the pre-demo check fails if the anchor's `/health` is unreachable |
 
 Other observations:

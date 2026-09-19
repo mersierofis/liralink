@@ -12,6 +12,8 @@ export const TRY_DP = 2;
 export const USDC_DP = 7;
 /** Storage precision of an FX rate (Decimal(20,7)); the API returns rates with this many dp. */
 export const RATE_DP = 7;
+/** An anchor rate is rounded down to 6 dp (anchor.md, SEP-38). */
+export const ANCHOR_RATE_DP = 6;
 
 /** A plain, non-negative decimal: digits, optionally a dot and more digits. No sign, no exponent. */
 const PLAIN_DECIMAL = /^\d+(\.\d+)?$/;
@@ -62,6 +64,32 @@ export function isValidRate(rate: string): boolean {
   if (!PLAIN_DECIMAL.test(rate)) return false;
   const d = parse(rate);
   return d.gt(0) && d.decimalPlaces() <= RATE_DP;
+}
+
+/** True when `value` is a plain decimal string > 0 (any number of dp). */
+export function isPositiveDecimal(value: unknown): value is string {
+  return typeof value === 'string' && PLAIN_DECIMAL.test(value) && parse(value).gt(0);
+}
+
+/** True when two plain decimal strings denote the same number ("1" and "1.0000000"). */
+export function sameDecimal(a: string, b: string): boolean {
+  return parse(a).eq(parse(b));
+}
+
+/**
+ * 1 / price, rounded DOWN to `dp` decimal places. Turns a SEP-38 price (USDC per 1 TRY) into a
+ * rate (TRY per 1 USDC). Rounding the rate down can only make quotedUSDC larger, never short.
+ */
+export function invertPriceDown(price: string, dp: number): string {
+  if (parse(price).lte(0)) throw new Error('price must be > 0');
+  const quotient = D.clone({ rounding: Decimal.ROUND_DOWN }).div(1, price);
+  return quotient.toDecimalPlaces(dp, Decimal.ROUND_DOWN).toFixed(dp);
+}
+
+/** numerator / denominator, rounded half-up to `dp` decimal places. Not for amounts of money. */
+export function ratio(numerator: string, denominator: string, dp: number): string {
+  if (parse(denominator).lte(0)) throw new Error('denominator must be > 0');
+  return parse(numerator).div(parse(denominator)).toDecimalPlaces(dp, Decimal.ROUND_HALF_UP).toFixed(dp);
 }
 
 /**

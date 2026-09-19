@@ -1,10 +1,12 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type { GetLinksQuery, Paginated, PaymentLink, PostLinksRequest } from '../contract/api.types';
 import { AppConfig } from '../config/app-config';
 import type { Merchant as MerchantRow } from '../generated/prisma/client';
 import { pageWindow } from '../common/pagination.dto';
 import { quoteUSDC } from '../common/money';
-import { FxService } from '../fx/fx.service';
+import { FxService, type FxQuote } from '../fx/fx.service';
+import { FxUnavailableError } from '../fx/fx.types';
+import { Prisma } from '../generated/prisma/client';
 import { PrismaService, isUniqueViolation, isUuid } from '../prisma/prisma.service';
 import { generateLinkCode, normalizeLinkCode } from './link-code';
 import { type LinkWithPayments, toPaymentLink, withPayments } from './link.mapper';
@@ -24,10 +26,12 @@ export class LinksService {
    * Quote once, lock forever: amountTRY (what the merchant is owed) and quotedUSDC (what the payer
    * sends) are fixed here, from the rate at this moment, and nothing ever recomputes them. The
    * quote therefore stays valid for the link's whole life: quoteExpiresAt = expiresAt.
+   * The rate's source, timestamp, mid rate and spread are stored with it for the receipt.
+   * No rate, no link: if the rate cannot be fetched this is a 503, never a stale or guessed rate.
    */
   async create(merchant: MerchantRow, body: PostLinksRequest): Promise<PaymentLink> {
-    const { rate } = await this.fx.getRate();
-    const quotedUSDC = quoteUSDC(body.amountTRY, rate);
+    const fx = await this.freshRate();
+    const quotedUSDC = quoteUSDC(body.amountTRY, fx.rate);
     const hours = body.expiresInHours ?? this.config.env.LINK_DEFAULT_EXPIRY_HOURS;
     const expiresAt = new Date(Date.now() + hours * HOUR_MS);
 
@@ -42,7 +46,12 @@ export class LinksService {
             description: body.description ?? null,
             amountTRY: body.amountTRY,
             quotedUSDC,
-            fxRate: rate,
+            fxRate: fx.rate,
+            fxSource: fx.source,
+            fxRateAt: fx.fetchedAt,
+            fxMidRate: fx.midRate,
+            fxSpread: fx.spread,
+            fxQuoteRaw: fx.raw === null ? Prisma.DbNull : (fx.raw as Prisma.InputJsonValue),
             quoteExpiresAt: expiresAt,
             expiresAt,
           },
@@ -93,6 +102,17 @@ export class LinksService {
     const code = normalizeLinkCode(rawCode);
     if (!code) return null;
     return this.prisma.paymentLink.findUnique({ where: { code }, include: withPayments });
+  }
+
+  private async freshRate(): Promise<FxQuote> {
+    try {
+      return await this.fx.getRate();
+    } catch (err) {
+      if (err instanceof FxUnavailableError) {
+        throw new ServiceUnavailableException(`FX rate unavailable, no link created: ${err.message}`);
+      }
+      throw err;
+    }
   }
 
   private async findOwn(merchant: MerchantRow, id: string): Promise<LinkWithPayments> {

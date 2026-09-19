@@ -44,14 +44,23 @@ export const envSchema = z
     // Soroban invoice contract (empty disables the contract rail)
     INVOICE_CONTRACT_ID: optStr(),
 
-    // FX
-    FX_PROVIDER: z.preprocess(blank, z.enum(['mock', 'live', 'anchor'])),
-    FX_MOCK_RATE_TRY_PER_USDC: str().refine(isValidRate, 'must be a decimal string > 0 with at most 7 dp'),
+    // FX. Default: the anchor's SEP-38 price. There is no fallback between providers.
+    FX_PROVIDER: z.preprocess(blank, z.enum(['mock', 'live', 'anchor']).default('anchor')),
+    FX_MOCK_RATE_TRY_PER_USDC: z.preprocess(
+      blank,
+      z.string().refine(isValidRate, 'must be a decimal string > 0 with at most 7 dp').optional(),
+    ),
     FX_LIVE_URL: optUrl(),
 
     // Anchor
     ANCHOR_PROVIDER: z.preprocess(blank, z.enum(['mock', 'sep6', 'sep24'])),
-    ANCHOR_HOME_DOMAIN: optStr(),
+    ANCHOR_HOME_DOMAIN: z.preprocess(
+      blank,
+      z
+        .string()
+        .regex(/^[a-z0-9.-]+(:\d+)?$/i, 'must be a bare host name without scheme or path, e.g. tr-mock-anchor.fly.dev')
+        .optional(),
+    ),
     ANCHOR_SEP24_TEST_KYC_URL: optUrl(),
     ANCHOR_SEP24_ENCODING: z.preprocess(blank, z.enum(['multipart', 'urlencoded']).optional()),
     ANCHOR_MOCK_DELAY_MS: optInt(0),
@@ -76,10 +85,18 @@ export const envSchema = z
     USDC_WD_E2E: flag(),
     USDC_WD_E2E_DESTINATION: optStr(),
   })
-  // Only the mock FX source exists so far; refuse to boot rather than quote from a rate we cannot fetch.
-  .refine((e) => e.FX_PROVIDER === 'mock', {
+  // Refuse to boot rather than price links from a rate source that cannot work.
+  .refine((e) => e.FX_PROVIDER !== 'live', {
     path: ['FX_PROVIDER'],
-    message: "only 'mock' is implemented in this build",
+    message: "'live' is not implemented; use 'anchor' or 'mock'",
+  })
+  .refine((e) => e.FX_PROVIDER !== 'anchor' || e.ANCHOR_HOME_DOMAIN !== undefined, {
+    path: ['ANCHOR_HOME_DOMAIN'],
+    message: 'required when FX_PROVIDER is anchor',
+  })
+  .refine((e) => e.FX_PROVIDER !== 'mock' || e.FX_MOCK_RATE_TRY_PER_USDC !== undefined, {
+    path: ['FX_MOCK_RATE_TRY_PER_USDC'],
+    message: 'required when FX_PROVIDER is mock',
   });
 
 export type Env = z.infer<typeof envSchema>;

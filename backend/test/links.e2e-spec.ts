@@ -18,6 +18,7 @@ describe('Payment links (e2e)', () => {
   beforeEach(async () => {
     await resetDb(t.prisma);
     t.fx.rate = '34.00';
+    t.fx.failure = null;
     ({ token } = await registerMerchant(t, { businessName: 'Erdemli Narenciye A.Ş.' }));
     auth = { Authorization: `Bearer ${token}` };
   });
@@ -102,6 +103,41 @@ describe('Payment links (e2e)', () => {
 
       const later = (await createLink().expect(201)).body;
       expect(later.quotedUSDC).toBe('121.2121213'); // 5000 / 41.25 = 121.21212121… rounded up
+    });
+  });
+
+  describe('FX rate', () => {
+    it('stores what was quoted and when, without adding fields to the API response', async () => {
+      t.fx.rate = '48.540000';
+      t.fx.midRate = '48.785077';
+      t.fx.spread = '0.0050237';
+      const link = (await createLink().expect(201)).body;
+
+      expect(Object.keys(link).sort()).toEqual(LINK_KEYS); // the contract has no fields for these yet
+      expect(link).toMatchObject({ quotedUSDC: '103.0078286', fxRate: '48.5400000' });
+
+      const row = await t.prisma.paymentLink.findUniqueOrThrow({ where: { id: link.id } });
+      expect(row.fxSource).toBe('anchor');
+      expect(row.fxRateAt.toISOString()).toBe('2026-09-19T10:00:00.000Z');
+      expect(row.fxMidRate.toFixed()).toBe('48.785077');
+      expect(row.fxSpread?.toFixed()).toBe('0.0050237');
+      expect(row.fxQuoteRaw).toEqual({ total_price: 'recorded', note: 'test double' });
+    });
+
+    it('503 ApiError and no link when the rate cannot be fetched — never a stale or guessed rate', async () => {
+      await createLink().expect(201); // a good rate was seen before
+      t.fx.failure = 'anchor /price answered HTTP 502';
+
+      const res = await createLink().expect(503);
+      expect(res.body).toEqual({
+        statusCode: 503,
+        message: 'FX rate unavailable, no link created: anchor /price answered HTTP 502',
+        error: 'Service Unavailable',
+      });
+      expect(await t.prisma.paymentLink.count()).toBe(1);
+
+      t.fx.failure = null;
+      await createLink().expect(201); // recovers as soon as the source does
     });
   });
 
