@@ -221,7 +221,7 @@ interface PaymentAttempt {         // an inbound payment that did not become a P
   txHash: string;
   amount: string;                 // 7 dp, in units of assetCode
   assetCode: string;              // e.g. 'USDC', 'XLM'
-  assetIssuer: string | null;     // G… issuer; null for XLM. USDC is accepted by issuer (Circle), not by code — a wrong_asset row with assetCode 'USDC' and another issuer is a spoofed USDC
+  assetIssuer: string | null;     // G… issuer; null for XLM. USDC is accepted only when code AND issuer (Circle) match; the code alone proves nothing — a wrong_asset row with assetCode 'USDC' and another issuer is a spoofed USDC
   reason: PaymentAttemptReason;
   createdAt: string;
 }

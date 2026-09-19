@@ -1,0 +1,212 @@
+// Derived from docs/api.types.ts (the API contract) and docs/00-PROJECT.md §5.
+// Money columns are Decimal(20,7), never Float (01-BACKEND.md). TRY values are stored with at most
+// 2 dp and USDC with 7; the API layer formats them (src/common/money.ts).
+// Enum values are the exact string literals of the contract's unions.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LinkStatus {
+  open
+  underpaid
+  paid
+  expired
+  cancelled
+}
+
+enum PayRail {
+  contract
+  memo
+  x402
+}
+
+enum SettleStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+enum WdStatus {
+  requested
+  processing
+  completed
+  failed
+}
+
+enum AnchorProvider {
+  mock
+  sep6
+  sep24
+}
+
+enum SettleFailReason {
+  unexpected_fee_asset
+  invalid_fee
+  anchor_status
+  amount_mismatch
+}
+
+enum AnchorBlockedReason {
+  missing_iban
+  outside_anchor_limits
+  anchor_withdraw_disabled
+}
+
+enum PaymentAttemptReason {
+  link_not_open
+  link_not_found
+  unmatched_memo
+  wrong_asset
+}
+
+enum UnallocatedSource {
+  stray
+  overpaid
+}
+
+model Merchant {
+  id              String   @id @default(uuid()) @db.Uuid
+  email           String   @unique
+  passwordHash    String
+  businessName    String
+  iban            String? // full IBAN; returned only to the merchant themself
+  autoSavePercent Int      @default(0)
+  unallocatedUSDC Decimal  @default(0) @db.Decimal(20, 7)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+
+  links              PaymentLink[]
+  paymentAttempts    PaymentAttempt[]
+  unallocatedCredits UnallocatedCredit[]
+  settlements        Settlement[]
+  withdrawals        Withdrawal[]
+}
+
+model PaymentLink {
+  id             String     @id @default(uuid()) @db.Uuid
+  code           String     @unique @db.VarChar(8)
+  merchantId     String     @db.Uuid
+  merchantName   String // denormalized for the payer page
+  title          String
+  description    String?
+  amountTRY      Decimal    @db.Decimal(20, 7) // locked at creation
+  quotedUSDC     Decimal    @db.Decimal(20, 7) // locked at creation, never recomputed
+  fxRate         Decimal    @db.Decimal(20, 7) // at quote time
+  quoteExpiresAt DateTime   @db.Timestamptz(3)
+  status         LinkStatus @default(open)
+  expiresAt      DateTime   @db.Timestamptz(3)
+  receivedUSDC   Decimal    @default(0) @db.Decimal(20, 7)
+  shortfallUSDC  Decimal?   @db.Decimal(20, 7)
+
+  // On-chain invoice (OnchainInvoice); all null when the link is not on-chain.
+  onchainContractId     String?
+  onchainInvoiceCode    String?
+  onchainDeadlineLedger Int?
+  onchainTxHash         String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  merchant Merchant  @relation(fields: [merchantId], references: [id])
+  payments Payment[]
+
+  @@index([merchantId, createdAt])
+}
+
+model Payment {
+  id           String   @id @default(uuid()) @db.Uuid
+  linkId       String   @db.Uuid
+  rail         PayRail
+  txHash       String   @unique
+  payerAddress String
+  amountUSDC   Decimal  @db.Decimal(20, 7)
+  ledger       Int
+  detectedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  link       PaymentLink @relation(fields: [linkId], references: [id])
+  settlement Settlement?
+
+  @@index([linkId, detectedAt])
+}
+
+// Internal record of an inbound payment that did not become a Payment. Never returned by the API.
+model PaymentAttempt {
+  id          String               @id @default(uuid()) @db.Uuid
+  linkCode    String?
+  merchantId  String?              @db.Uuid
+  txHash      String
+  amount      Decimal              @db.Decimal(20, 7) // in units of assetCode
+  assetCode   String
+  assetIssuer String? // null for XLM
+  reason      PaymentAttemptReason
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
+
+  merchant Merchant? @relation(fields: [merchantId], references: [id])
+
+  @@index([txHash])
+  @@index([merchantId, createdAt])
+}
+
+model UnallocatedCredit {
+  id         String            @id @default(uuid()) @db.Uuid
+  merchantId String            @db.Uuid
+  source     UnallocatedSource
+  txHash     String
+  amountUSDC Decimal           @db.Decimal(20, 7)
+  linkCode   String
+  reason     String
+  createdAt  DateTime          @default(now()) @db.Timestamptz(3)
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId, createdAt])
+}
+
+model Settlement {
+  id             String               @id @default(uuid()) @db.Uuid
+  merchantId     String               @db.Uuid
+  paymentId      String               @unique @db.Uuid
+  amountUSDC     Decimal              @db.Decimal(20, 7)
+  amountTRY      Decimal              @db.Decimal(20, 7)
+  fxRate         Decimal              @db.Decimal(20, 7)
+  savedUSDC      Decimal              @db.Decimal(20, 7)
+  feeUSDC        Decimal?             @db.Decimal(20, 7)
+  netTRY         Decimal?             @db.Decimal(20, 7)
+  provider       AnchorProvider
+  status         SettleStatus         @default(pending)
+  anchorRef      String?
+  failReason     SettleFailReason?
+  blockedReason  AnchorBlockedReason? // internal only, never exposed by the API
+  interactiveUrl String?
+  createdAt      DateTime             @default(now()) @db.Timestamptz(3)
+  completedAt    DateTime?            @db.Timestamptz(3)
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  payment  Payment  @relation(fields: [paymentId], references: [id])
+
+  @@index([merchantId, createdAt])
+}
+
+model Withdrawal {
+  id          String    @id @default(uuid()) @db.Uuid
+  merchantId  String    @db.Uuid
+  amountTRY   Decimal   @db.Decimal(20, 7)
+  iban        String // full IBAN; the API returns it masked
+  status      WdStatus  @default(requested)
+  anchorRef   String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  completedAt DateTime? @db.Timestamptz(3)
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId, createdAt])
+}

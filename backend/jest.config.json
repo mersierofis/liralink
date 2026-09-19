@@ -1,0 +1,24 @@
+{
+  "rootDir": "src",
+  "testRegex": ".*\\.spec\\.ts$",
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
+  "transform": {
+    "^.+\\.(t|j)s$": [
+      "ts-jest",
+      {
+        "tsconfig": "<rootDir>/../tsconfig.json"
+      }
+    ]
+  },
+  "transformIgnorePatterns": [
+    "/node_modules/(?!(@noble|uint8array-extras|@stellar)/)"
+  ],
+  "moduleNameMapper": {
+    "^(\\.{1,2}/.*)\\.js$": "$1"
+  },
+  "testEnvironment": "node"
+}
