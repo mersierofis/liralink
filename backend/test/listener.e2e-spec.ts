@@ -1,5 +1,6 @@
 import { AppConfig } from '../src/config/app-config';
 import { toInboundOp } from '../src/listener/inbound-op';
+import { type PaymentDetected, PaymentEvents } from '../src/listener/payment-events';
 import { PaymentProcessor } from '../src/listener/payment-processor';
 import { FakePaymentSource, createTestApp, registerMerchant, resetDb, type TestApp } from './helpers';
 
@@ -333,6 +334,37 @@ describe('Horizon payment listener (e2e)', () => {
       expect(t.listener.status()).toEqual({ state: 'stopped', cursor: ok.paging_token });
       expect((await t.prisma.listenerCursor.findFirstOrThrow()).pagingToken).toBe(ok.paging_token);
       expect(await t.prisma.payment.count()).toBe(1);
+    });
+  });
+
+  describe('payment.detected', () => {
+    it('fires once, after commit, only when a link becomes paid — not for underpaid, stray, attempts or replays', async () => {
+      await boot();
+      const seen: PaymentDetected[] = [];
+      t.app.get(PaymentEvents).onPaymentDetected((e) => seen.push(e));
+      const link = await newLink();
+
+      await pay({ code: link.code, amount: '100.0000000' }); // underpaid: no event
+      const done = await pay({ code: link.code, amount: '47.0588236' }); // completes: event
+      await pay({ code: link.code, amount: '1.0000000' }); // stray: no event
+      await pay({ code: 'ZZZZZZZZ' }); // attempt: no event
+      t.source.replay(done); // replay: no second event
+      await t.listener.idle();
+
+      expect(seen).toEqual([{ linkId: link.id, txHash: done.transaction_hash }]);
+      // By the time the event fires, the payment is committed and readable.
+      expect((await getLink(link.id)).status).toBe('paid');
+    });
+
+    it('a throwing subscriber neither undoes the payment nor stalls the listener', async () => {
+      await boot();
+      t.app.get(PaymentEvents).onPaymentDetected(() => {
+        throw new Error('settlement exploded');
+      });
+      const link = await newLink();
+      const r = await pay({ code: link.code });
+      expect((await getLink(link.id)).status).toBe('paid');
+      expect(t.listener.status()).toEqual({ state: 'running', cursor: r.paging_token });
     });
   });
 

@@ -4,6 +4,7 @@ import { addUSDC, formatUSDC } from '../common/money';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { InboundOp } from './inbound-op';
+import { PaymentEvents } from './payment-events';
 import { type Decision, type LinkState, type MatcherConfig, classify, decide } from './matcher';
 
 type Tx = Prisma.TransactionClient;
@@ -26,6 +27,7 @@ export class PaymentProcessor {
   constructor(
     private readonly prisma: PrismaService,
     config: AppConfig,
+    private readonly events: PaymentEvents,
   ) {
     this.cfg = { platformAccount: config.platformAccount, usdcCode: config.env.USDC_CODE, usdcIssuer: config.env.USDC_ISSUER };
     this.streamName = `horizon-payments:${config.platformAccount}`;
@@ -42,7 +44,8 @@ export class PaymentProcessor {
 
   async process(op: InboundOp): Promise<ProcessResult> {
     const classified = classify(op, this.cfg); // throws on a malformed amount: never guess
-    return this.prisma.$transaction(async (tx) => {
+    let completedLinkId: string | null = null;
+    const result = await this.prisma.$transaction(async (tx) => {
       if (await tx.processedOperation.findUnique({ where: { opId: op.opId } })) {
         await this.advanceCursor(tx, op.pagingToken);
         return { outcome: 'duplicate' };
@@ -50,13 +53,18 @@ export class PaymentProcessor {
 
       const code = classified.kind === 'usdc' || classified.kind === 'wrong_asset' ? classified.code : null;
       const link = code ? await this.lockLink(tx, code) : null;
-      const outcome = await this.apply(tx, decide(classified, link, op.createdAt, this.cfg), op);
+      const decision = decide(classified, link, op.createdAt, this.cfg);
+      const outcome = await this.apply(tx, decision, op);
+      if (decision.kind === 'credit' && decision.credit.status === 'paid') completedLinkId = decision.link.id;
 
       // The primary key is the idempotency guard; a concurrent duplicate fails the whole transaction.
       await tx.processedOperation.create({ data: { opId: op.opId, txHash: op.txHash, outcome } });
       await this.advanceCursor(tx, op.pagingToken);
       return { outcome };
     });
+    // Only after commit, so settlement never sees a payment that could still roll back.
+    if (completedLinkId) this.events.emitPaymentDetected({ linkId: completedLinkId, txHash: op.txHash });
+    return result;
   }
 
   /** Row-locks the link, so a concurrent cancel or a second operation waits for this one. */
