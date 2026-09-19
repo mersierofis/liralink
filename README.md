@@ -29,8 +29,8 @@ is paid out to the merchant's IBAN. The merchant never touches crypto. **Testnet
 
 | | URL |
 |---|---|
-| Merchant panel | TODO |
-| Payer page | TODO |
+| Merchant panel | https://merchant.tutorialplatform.com |
+| Payer page | https://pay.tutorialplatform.com/p/Y82H54DH (the demo merchant's open link) |
 | API | https://liralink2-api.tutorialplatform.com/api |
 | API docs (Swagger) | https://liralink2-api.tutorialplatform.com/docs |
 | API health | https://liralink2-api.tutorialplatform.com/api/health |
@@ -68,13 +68,13 @@ the contract's storage, TTL and auth patterns. Design docs start at
 
 | Skill | File | Used for |
 |---|---|---|
-| Anchors (community, Cheesecake Labs) | `SKILL.md` in `CheesecakeLabs/stellar-anchor-skill` | SEP-6 / SEP-12 implementation checklist and gotchas |
-| SEPs, CAPs & Ecosystem (official) | `skills/standards/SKILL.md` in `stellar/stellar-dev-skill` | Routing to SEP-1 / SEP-10 / SEP-24 and spec review |
-| Agent Payments — x402 + MPP (official) | `skills/agentic-payments/SKILL.md` in `stellar/stellar-dev-skill` | x402 seller and buyer sides |
-| TR Mock Anchor (hackathon) | `SKILL.md` in `yigitcangokmen/stellar-hackathon-turkiye` | Endpoints, treasury, `Memo.id` rule and SEP-38 asset ids of the TRY anchor |
+| Anchors (community, Cheesecake Labs) | [`skills/anchors/SKILL.md`](skills/anchors/SKILL.md) | SEP-6 / SEP-12 implementation checklist and gotchas |
+| SEPs, CAPs & Ecosystem (official) | [`skills/standards/SKILL.md`](skills/standards/SKILL.md) | Routing to SEP-1 / SEP-10 / SEP-24 and spec review |
+| Agent Payments — x402 + MPP (official) | [`skills/agentic-payments/SKILL.md`](skills/agentic-payments/SKILL.md) | x402 seller and buyer sides |
+| TR Mock Anchor (hackathon) | [`skills/anchor-tr/SKILL.md`](skills/anchor-tr/SKILL.md) | Endpoints, treasury, `Memo.id` rule and SEP-38 asset ids of the TRY anchor |
 
-TODO: vendor each skill unmodified under `skills/<name>/` with a `SOURCE.md` (URL, commit, fetch
-date) and switch these citations to the in-repo paths.
+Each skill is vendored unmodified under `skills/<name>/`. Its `SOURCE.md` gives the upstream URL,
+the pinned commit, the fetch date and the licence.
 
 ## Regulatory note
 
