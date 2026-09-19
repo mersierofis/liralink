@@ -66,8 +66,8 @@ export const envSchema = z
     ANCHOR_MOCK_DELAY_MS: optInt(0),
 
     // Payment links
+    // A link's quote lives exactly as long as the link; there is no separate quote TTL.
     LINK_DEFAULT_EXPIRY_HOURS: int(1),
-    QUOTE_TTL_MINUTES: optInt(1),
 
     // x402
     X402_FACILITATOR_URL: optUrl(),

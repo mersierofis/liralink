@@ -52,6 +52,11 @@ export function formatRate(value: MoneyLike): string {
   return format(value, RATE_DP, 'FX rate');
 }
 
+/** An FX spread (a fraction, not money) as the API returns it: 7 dp. */
+export function formatSpread(value: MoneyLike): string {
+  return format(value, USDC_DP, 'FX spread');
+}
+
 /** True when `amountTRY` is a valid link amount: exactly 2 dp, 1.00–1,000,000.00. */
 export function isValidLinkAmountTRY(amountTRY: string): boolean {
   if (!TRY_INPUT.test(amountTRY)) return false;
