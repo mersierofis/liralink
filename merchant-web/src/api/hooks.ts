@@ -10,6 +10,8 @@ import type {
   PaymentLink,
   PaymentWithLink,
   GetUnallocatedResponse,
+  PostUsdcWithdrawalsRequest,
+  UsdcWithdrawal,
   Withdrawal,
 } from './types'
 
@@ -108,6 +110,19 @@ export function useCancelLink() {
   })
 }
 
+/** POST /links/:id/onchain — re-tries the best-effort Soroban invoice. Only valid while the link is
+ * open with nothing received (409 otherwise); a link that already has `onchain` is returned as is. */
+export function useRetryOnchain() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => apiRequest<PaymentLink>(`/links/${id}/onchain`, { method: 'POST' }),
+    onSuccess: (link) => {
+      queryClient.invalidateQueries({ queryKey: ['links'] })
+      queryClient.setQueryData(['links', link.id], link)
+    },
+  })
+}
+
 export function useBalance() {
   return useQuery({
     queryKey: ['balance'],
@@ -174,5 +189,31 @@ export function useUnallocated(page: number, limit: number, enabled: boolean) {
     queryKey: ['unallocated', page, limit],
     queryFn: () => apiRequest<GetUnallocatedResponse>(`/unallocated?page=${page}&limit=${limit}`),
     enabled,
+  })
+}
+
+export function useUsdcWithdrawals(filters: { page?: number; limit?: number } = {}) {
+  const params = new URLSearchParams()
+  if (filters.page) params.set('page', String(filters.page))
+  if (filters.limit) params.set('limit', String(filters.limit))
+  const qs = params.toString()
+
+  return useQuery({
+    queryKey: ['usdc-withdrawals', filters],
+    queryFn: () => apiRequest<Paginated<UsdcWithdrawal>>(`/usdc-withdrawals${qs ? `?${qs}` : ''}`),
+    refetchInterval: 5000,
+  })
+}
+
+export function useCreateUsdcWithdrawal() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: PostUsdcWithdrawalsRequest) =>
+      apiRequest<UsdcWithdrawal>('/usdc-withdrawals', { method: 'POST', body }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['usdc-withdrawals'] })
+      queryClient.invalidateQueries({ queryKey: ['balance'] })
+      queryClient.invalidateQueries({ queryKey: ['unallocated'] })
+    },
   })
 }

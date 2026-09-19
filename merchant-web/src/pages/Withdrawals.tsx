@@ -3,18 +3,29 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { WithdrawDialog } from '@/components/WithdrawDialog'
 import { WithdrawalStatusBadge } from '@/components/WithdrawalStatusBadge'
+import { UsdcWithdrawDialog } from '@/components/UsdcWithdrawDialog'
+import { ExplorerLink } from '@/components/ExplorerLink'
+import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
 import { useAuth } from '@/auth/AuthProvider'
-import { useBalance, useWithdrawals } from '@/api/hooks'
+import { useBalance, useUsdcWithdrawals, useWithdrawals } from '@/api/hooks'
 import { HttpError } from '@/api/client'
-import { formatTRY } from '@/lib/money'
-import { formatDateTime } from '@/lib/format'
+import { formatTRY, formatUSDC, formatUSDCFull } from '@/lib/money'
+import { formatDateTime, shortAddress } from '@/lib/format'
+import type { UsdcWdStatus } from '@/api/types'
+
+const USDC_STATUS: Record<UsdcWdStatus, { label: string; variant: 'success' | 'warning' | 'destructive' }> = {
+  submitted: { label: 'Submitted', variant: 'warning' },
+  completed: { label: 'Completed', variant: 'success' },
+  failed: { label: 'Failed', variant: 'destructive' },
+}
 
 export default function WithdrawalsPage() {
   const { merchant } = useAuth()
   const balance = useBalance()
   const withdrawals = useWithdrawals({ limit: 50 })
+  const usdcWithdrawals = useUsdcWithdrawals({ limit: 50 })
   const isAutoPayout = merchant?.settlementMode === 'auto_payout'
 
   return (
@@ -98,6 +109,62 @@ export default function WithdrawalsPage() {
           )}
         </div>
       )}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h2 className="text-lg font-medium">USDC to your wallet</h2>
+          {balance.data && <UsdcWithdrawDialog balance={balance.data} />}
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Saved: <span title={formatUSDCFull(balance.data?.savedUSDC ?? '0.0000000')}>{formatUSDC(balance.data?.savedUSDC ?? '0')}</span>
+          {' · '}Unallocated:{' '}
+          <span title={formatUSDCFull(balance.data?.unallocatedUSDC ?? '0.0000000')}>{formatUSDC(balance.data?.unallocatedUSDC ?? '0')}</span>
+        </p>
+        {usdcWithdrawals.isLoading && <Skeleton className="h-12 w-full" />}
+        {usdcWithdrawals.isError && (
+          <ErrorState
+            message={usdcWithdrawals.error instanceof HttpError ? usdcWithdrawals.error.message : 'Could not load USDC withdrawals.'}
+            onRetry={() => usdcWithdrawals.refetch()}
+          />
+        )}
+        {!usdcWithdrawals.isLoading && !usdcWithdrawals.isError && usdcWithdrawals.data?.items.length === 0 && (
+          <EmptyState title="No USDC withdrawals yet" description="Send your Saved or Unallocated USDC to your own Stellar wallet." />
+        )}
+        {!usdcWithdrawals.isLoading && !usdcWithdrawals.isError && !!usdcWithdrawals.data?.items.length && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>From</TableHead>
+                <TableHead>To</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Tx</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {usdcWithdrawals.data.items.map((w) => (
+                <TableRow key={w.id}>
+                  <TableCell className="text-sm text-muted-foreground">{formatDateTime(w.createdAt)}</TableCell>
+                  <TableCell title={formatUSDCFull(w.amountUSDC)}>{formatUSDC(w.amountUSDC)}</TableCell>
+                  <TableCell className="capitalize">{w.source}</TableCell>
+                  <TableCell className="font-mono text-xs">{shortAddress(w.destination, 6, 6)}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={USDC_STATUS[w.status].variant}
+                      title={w.status === 'failed' && w.failReason ? `Reason: ${w.failReason} — the amount was returned to ${w.source}` : undefined}
+                    >
+                      {USDC_STATUS[w.status].label}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <ExplorerLink href={w.explorerUrl}>{shortAddress(w.txHash, 4, 4)}</ExplorerLink>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
     </div>
   )
 }

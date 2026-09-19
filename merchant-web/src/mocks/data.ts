@@ -1,11 +1,18 @@
+import { Decimal } from 'decimal.js'
+
 import type {
   Balance,
   Merchant,
   PaymentLink,
   Payment,
   Settlement,
+  UnallocatedCredit,
+  UsdcWithdrawal,
   Withdrawal,
 } from '@/api/types'
+
+export const MOCK_CONTRACT_ID = 'C' + 'A'.repeat(55)
+export const MOCK_LEDGER_WINDOW = 17_280 // ~24 h of ledgers, as the real invoice deadline
 
 export const MOCK_TOKEN = 'mock-jwt-token'
 // Mock-only credential — bears no relation to the real demo account's password, which was
@@ -34,6 +41,11 @@ function isoDaysAgo(days: number, hours = 0) {
   return new Date(Date.now() - days * 86_400_000 - hours * 3_600_000).toISOString()
 }
 
+// Demo balances so the USDC withdrawal flow has something to spend. Saved comes from auto-save,
+// unallocated from one stray payment to an already-paid link (both would be 0 on a fresh account).
+const SAVED_SEED = '8.4000000'
+const UNALLOCATED_SEED = '12.5000000'
+
 export const state = {
   merchant: {
     id: 'mock-merchant-1',
@@ -41,7 +53,7 @@ export const state = {
     businessName: 'Erdemli Narenciye A.Ş.',
     iban: 'TR330006100519786457841326',
     autoSavePercent: 0,
-    unallocatedUSDC: '0.0000000',
+    unallocatedUSDC: UNALLOCATED_SEED,
     settlementMode: 'balance',
     createdAt: isoDaysAgo(30),
   } as Merchant,
@@ -50,6 +62,9 @@ export const state = {
   links: [] as PaymentLink[],
   settlements: [] as Settlement[],
   withdrawals: [] as Withdrawal[],
+  savedUSDC: SAVED_SEED,
+  credits: [] as UnallocatedCredit[],
+  usdcWithdrawals: [] as UsdcWithdrawal[],
 }
 
 function makePaidLink(opts: {
@@ -100,6 +115,8 @@ function makePaidLink(opts: {
     amountTRY: opts.amountTRY,
     quotedUSDC,
     fxRate: FX_RATE,
+    fxRateAt: isoDaysAgo(opts.daysAgo, 1),
+    fxSpread: '0.0000000',
     quoteExpiresAt: isoDaysAgo(opts.daysAgo - 1),
     status: 'paid',
     expiresAt: isoDaysAgo(opts.daysAgo - 1),
@@ -114,6 +131,7 @@ function makePaidLink(opts: {
 
 function makeOpenLink(opts: { code: string; title: string; amountTRY: string; daysAgo: number }): PaymentLink {
   const quotedUSDC = quoteUSDC(opts.amountTRY)
+  const expiresAt = new Date(Date.now() + 24 * 3_600_000).toISOString()
   return {
     id: `link-${opts.code}`,
     code: opts.code,
@@ -123,9 +141,11 @@ function makeOpenLink(opts: { code: string; title: string; amountTRY: string; da
     amountTRY: opts.amountTRY,
     quotedUSDC,
     fxRate: FX_RATE,
-    quoteExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    fxRateAt: isoDaysAgo(opts.daysAgo),
+    fxSpread: '0.0000000',
+    quoteExpiresAt: expiresAt, // the quote is never re-quoted: quoteExpiresAt === expiresAt
     status: 'open',
-    expiresAt: new Date(Date.now() + 24 * 3_600_000).toISOString(),
+    expiresAt,
     payUrl: `${PAY_WEB_BASE}/${opts.code}`,
     receivedUSDC: '0',
     payments: [],
@@ -150,6 +170,21 @@ export function seed() {
   ]
   state.settlements.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   state.withdrawals = []
+  state.savedUSDC = SAVED_SEED
+  state.usdcWithdrawals = []
+  const strayTx = hex(64)
+  state.credits = [
+    {
+      id: 'credit-stray-1',
+      source: 'stray',
+      txHash: strayTx,
+      explorerUrl: `${import.meta.env.VITE_EXPLORER_TX_URL}${strayTx}`,
+      amountUSDC: UNALLOCATED_SEED,
+      linkCode: 'DEMO0003',
+      reason: 'Payment to a link that was already paid',
+      createdAt: isoDaysAgo(1),
+    },
+  ]
 }
 
 export function computeBalance(): Balance {
@@ -166,7 +201,7 @@ export function computeBalance(): Balance {
   return {
     availableTRY: availableTRY.toFixed(2),
     pendingTRY: pendingTRY.toFixed(2),
-    savedUSDC: '0.0000000',
+    savedUSDC: state.savedUSDC,
     unallocatedUSDC: state.merchant.unallocatedUSDC,
     paidOutTRY: '0.00', // mock adapter is always settlementMode 'balance', never auto_payout
   }
@@ -187,7 +222,7 @@ export function simulatePayment(linkId: string) {
     const payment: Payment = {
       id: `pay-${linkId}-${Date.now()}`,
       linkId,
-      rail: 'memo',
+      rail: current.onchain ? 'contract' : 'memo',
       txHash,
       payerAddress: stellarAddress(),
       amountUSDC: current.quotedUSDC,
@@ -229,4 +264,26 @@ export function simulatePayment(linkId: string) {
       }, 3000)
     }, 3000)
   }, 2000)
+}
+
+/** Debits `amount` USDC from a USDC balance and returns false when it does not cover it. */
+export function debitUsdc(source: 'saved' | 'unallocated', amount: Decimal): boolean {
+  const have = new Decimal(source === 'saved' ? state.savedUSDC : state.merchant.unallocatedUSDC)
+  if (amount.gt(have)) return false
+  const left = have.minus(amount).toFixed(7)
+  if (source === 'saved') state.savedUSDC = left
+  else state.merchant = { ...state.merchant, unallocatedUSDC: left }
+  return true
+}
+
+export function unallocatedSummary() {
+  const credited = state.credits.reduce((sum, c) => sum.plus(c.amountUSDC), new Decimal(0))
+  const withdrawn = state.usdcWithdrawals
+    .filter((w) => w.source === 'unallocated' && w.status !== 'failed')
+    .reduce((sum, w) => sum.plus(w.amountUSDC), new Decimal(0))
+  return {
+    creditedUSDC: credited.toFixed(7),
+    withdrawnUSDC: withdrawn.toFixed(7),
+    remainingUSDC: state.merchant.unallocatedUSDC,
+  }
 }

@@ -1,7 +1,19 @@
 import { http, HttpResponse, type HttpHandler } from 'msw'
 
-import { MOCK_TOKEN, computeBalance, seed, simulatePayment, state } from './data'
-import type { ApiError, LinkStatus, PaymentLink, PaymentWithLink, Withdrawal } from '@/api/types'
+import {
+  MOCK_CONTRACT_ID,
+  MOCK_LEDGER_WINDOW,
+  MOCK_TOKEN,
+  computeBalance,
+  debitUsdc,
+  seed,
+  simulatePayment,
+  state,
+  unallocatedSummary,
+} from './data'
+import { Decimal } from 'decimal.js'
+
+import type { ApiError, LinkStatus, PaymentLink, PaymentWithLink, UsdcWithdrawal, Withdrawal } from '@/api/types'
 
 seed()
 
@@ -87,6 +99,7 @@ export const handlers: HttpHandler[] = [
     const rate = 34
     const quotedUSDC = (Math.ceil((Number(body.amountTRY) / rate) * 1e7) / 1e7).toFixed(7)
     const hours = body.expiresInHours ?? 24
+    const expiresAt = new Date(Date.now() + hours * 3_600_000).toISOString()
     const newLink: PaymentLink = {
       id: `link-${code}`,
       code,
@@ -97,9 +110,11 @@ export const handlers: HttpHandler[] = [
       amountTRY: Number(body.amountTRY).toFixed(2),
       quotedUSDC,
       fxRate: '34.0000000',
-      quoteExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      fxRateAt: new Date().toISOString(),
+      fxSpread: '0.0000000',
+      quoteExpiresAt: expiresAt, // the quote is never re-quoted: quoteExpiresAt === expiresAt
       status: 'open',
-      expiresAt: new Date(Date.now() + hours * 3_600_000).toISOString(),
+      expiresAt,
       payUrl: `http://localhost:5174/p/${code}`,
       receivedUSDC: '0',
       payments: [],
@@ -108,6 +123,24 @@ export const handlers: HttpHandler[] = [
     }
     state.links.unshift(newLink)
     return HttpResponse.json(newLink, { status: 201 })
+  }),
+
+  http.post('*/api/links/:id/onchain', async ({ request, params }) => {
+    const authError = requireAuth(request)
+    if (authError) return authError
+    const link = state.links.find((l) => l.id === params.id)
+    if (!link) return error(404, 'Link not found')
+    if (link.onchain) return HttpResponse.json(link)
+    if (link.status !== 'open' || link.payments.length > 0) {
+      return error(409, 'Only an open link with nothing received can get an on-chain invoice')
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000)) // Soroban submit takes a moment
+    link.onchain = {
+      contractId: MOCK_CONTRACT_ID,
+      invoiceCode: link.code,
+      deadlineLedger: 4_700_000 + MOCK_LEDGER_WINDOW,
+    }
+    return HttpResponse.json(link)
   }),
 
   http.post('*/api/links/:id/cancel', ({ request, params }) => {
@@ -167,16 +200,56 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json({ items, total: items.length })
   }),
 
-  // Mock merchant has no unallocated credits (unallocatedUSDC is "0.0000000"), so the list is empty.
   http.get('*/api/unallocated', ({ request }) => {
     const authError = requireAuth(request)
     if (authError) return authError
-    const zero = '0.0000000'
-    return HttpResponse.json({
-      items: [],
-      total: 0,
-      summary: { creditedUSDC: zero, withdrawnUSDC: zero, remainingUSDC: zero },
-    })
+    const items = [...state.credits].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    return HttpResponse.json({ items, total: items.length, summary: unallocatedSummary() })
+  }),
+
+  http.get('*/api/usdc-withdrawals', ({ request }) => {
+    const authError = requireAuth(request)
+    if (authError) return authError
+    const limit = Number(new URL(request.url).searchParams.get('limit') ?? '20')
+    const items = [...state.usdcWithdrawals].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit)
+    return HttpResponse.json({ items, total: state.usdcWithdrawals.length })
+  }),
+
+  http.post('*/api/usdc-withdrawals', async ({ request }) => {
+    const authError = requireAuth(request)
+    if (authError) return authError
+    const body = (await request.json()) as { amountUSDC?: string; destination?: string; source?: string }
+    if (!body.amountUSDC || !/^\d+(\.\d{1,7})?$/.test(body.amountUSDC) || new Decimal(body.amountUSDC).lte(0)) {
+      return error(400, 'amountUSDC must be a positive decimal string')
+    }
+    if (!body.destination || !/^G[A-Z2-7]{55}$/.test(body.destination)) {
+      return error(400, 'destination must be a Stellar G… address')
+    }
+    if (body.source !== 'saved' && body.source !== 'unallocated') {
+      return error(400, "source must be 'saved' or 'unallocated'")
+    }
+    // The amount is debited when the request is accepted, and returned to `source` on failure.
+    if (!debitUsdc(body.source, new Decimal(body.amountUSDC))) return error(422, 'Insufficient balance')
+
+    const txHash = Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+    const withdrawal: UsdcWithdrawal = {
+      id: `uwd-${Date.now()}`,
+      merchantId: state.merchant.id,
+      amountUSDC: new Decimal(body.amountUSDC).toFixed(7),
+      destination: body.destination,
+      source: body.source,
+      status: 'submitted',
+      txHash,
+      explorerUrl: `${import.meta.env.VITE_EXPLORER_TX_URL}${txHash}`,
+      failReason: null,
+      createdAt: new Date().toISOString(),
+    }
+    state.usdcWithdrawals.unshift(withdrawal)
+    setTimeout(() => {
+      withdrawal.status = 'completed'
+      withdrawal.completedAt = new Date().toISOString()
+    }, 5000)
+    return HttpResponse.json(withdrawal, { status: 201 })
   }),
 
   http.get('*/api/withdrawals', ({ request }) => {

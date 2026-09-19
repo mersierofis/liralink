@@ -13,11 +13,18 @@ import { ExplorerLink } from '@/components/ExplorerLink'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { SettlementStatusBadge } from '@/components/SettlementStatusBadge'
-import { useLink, usePayments, useSimulatePayment } from '@/api/hooks'
+import { useLink, usePayments, useRetryOnchain, useSimulatePayment } from '@/api/hooks'
+import { SettlementTimeline } from '@/components/SettlementTimeline'
 import { HttpError } from '@/api/client'
+import { Decimal } from 'decimal.js'
+
 import { formatTRY, formatUSDC, formatUSDCFull } from '@/lib/money'
 import { formatDateTime, shortAddress } from '@/lib/format'
 import type { LinkStatus } from '@/api/types'
+
+function formatFx(rate: string): string {
+  return new Decimal(rate).toFixed(2)
+}
 
 const POLLING_STATUSES: LinkStatus[] = ['open', 'underpaid']
 
@@ -31,6 +38,7 @@ export default function LinkDetailPage() {
   })
 
   const simulatePayment = useSimulatePayment()
+  const retryOnchain = useRetryOnchain()
   const isMock = import.meta.env.VITE_USE_MOCK === 'true'
 
   // No GET /settlements-for-link endpoint exists — pull it from the merchant's payments list
@@ -141,6 +149,65 @@ export default function LinkDetailPage() {
         </Card>
       </div>
 
+      <p className="text-sm text-muted-foreground">
+        Rate locked at {formatFx(link.fxRate)} TRY per USDC
+        {link.fxSpread !== null && new Decimal(link.fxSpread).gt(0) ? ` (incl. ${link.fxSpread} spread)` : ''}, fetched{' '}
+        {formatDateTime(link.fxRateAt)}. It is never re-quoted; the link expires {formatDateTime(link.expiresAt)}.
+      </p>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>On-chain invoice</CardTitle>
+          <CardDescription>
+            Lets a payer pay through the Soroban contract instead of a memo payment. Created best-effort with the link.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {link.onchain ? (
+            <dl className="grid gap-2 text-sm sm:grid-cols-3">
+              <div>
+                <dt className="text-xs text-muted-foreground">Contract</dt>
+                <dd className="flex items-center gap-1.5">
+                  <span className="font-mono">{shortAddress(link.onchain.contractId, 6, 6)}</span>
+                  <CopyButton value={link.onchain.contractId} label="" className="h-6 px-1.5" />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Invoice code</dt>
+                <dd className="font-mono">{link.onchain.invoiceCode}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Deadline ledger</dt>
+                <dd>{link.onchain.deadlineLedger}</dd>
+              </div>
+            </dl>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                No on-chain invoice yet. Payers can still pay with the memo payment.
+              </p>
+              {link.status === 'open' && link.payments.length === 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={retryOnchain.isPending}
+                  onClick={async () => {
+                    try {
+                      await retryOnchain.mutateAsync(link.id)
+                      toast.success('On-chain invoice created')
+                    } catch (err) {
+                      toast.error(err instanceof HttpError ? err.message : 'Could not create the on-chain invoice.')
+                    }
+                  }}
+                >
+                  {retryOnchain.isPending ? 'Creating…' : 'Retry on-chain'}
+                </Button>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Payments</CardTitle>
@@ -213,9 +280,12 @@ export default function LinkDetailPage() {
           {!paymentsQuery.isLoading &&
             link.payments.length > 0 &&
             settledPayments.map((payment) => (
-              <div key={payment.id} className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm text-muted-foreground">{formatUSDC(payment.amountUSDC)}</span>
-                <SettlementStatusBadge payment={payment} />
+              <div key={payment.id} className="space-y-3 rounded-lg border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm text-muted-foreground">{formatUSDC(payment.amountUSDC)}</span>
+                  <SettlementStatusBadge payment={payment} />
+                </div>
+                {payment.settlement && <SettlementTimeline settlement={payment.settlement} />}
               </div>
             ))}
           {!paymentsQuery.isLoading && link.payments.length > 0 && settledPayments.length === 0 && (
