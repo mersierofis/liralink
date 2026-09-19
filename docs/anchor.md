@@ -198,7 +198,7 @@ Other observations:
 - Statuses: `pending_user_transfer_start → pending_anchor → completed` (no `incomplete`).
 - The payout is simulated — no bank is credited — but the routing to the registered IBAN is real.
 - A verified settlement: 1.0328445 USDC in → 50.00 TRY out (0.25 TRY fee) to the merchant's IBAN
-  `TR33 **** **** **** **** **26`, with a bank reference on the completed transaction; payment
+  `TR33 **** **** **** **** **** 26`, with a bank reference on the completed transaction; payment
   [`440149f4…`](https://stellar.expert/explorer/testnet/tx/440149f4ac9cf07de9de10cb25f32c3fd5e4b766ed149f6a789715aac6e6269d)
   (`memo_type: id`, destination the treasury). The bare platform login got `404` for it.
 

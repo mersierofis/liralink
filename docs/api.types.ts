@@ -1,7 +1,7 @@
 // LiraLink API contract (v1) — the single source of truth for request and response shapes.
 //
-// Derived from docs/00-PROJECT.md §5 (domain model) and §6 (API contract); anchor codes from
-// docs/anchor.md. If this file and 00-PROJECT.md disagree, fix 00-PROJECT.md first, then this file.
+// Originally derived from docs/00-PROJECT.md §5 (domain model) and §6 (API contract); anchor codes
+// from docs/anchor.md. This file wins: if 00-PROJECT.md disagrees with it, fix 00-PROJECT.md.
 // merchant-web and pay-web commit a byte-identical copy. Types only: no runtime code, no imports.
 //
 // Rules:
@@ -40,9 +40,8 @@ export type StellarContractId = string;
 /** 64-hex Stellar transaction hash. */
 export type TxHash = string;
 /**
- * Masked IBAN, exactly this shape: "TR33 **** **** **** **** **26". The first 4 and the last 2
- * characters of the IBAN are visible, everything between is the fixed mask
- * "**** **** **** **** **" — the mask does not preserve the IBAN's length.
+ * Masked IBAN, exactly this shape: "TR33 **** **** **** **** **** 26". A Turkish IBAN has 26
+ * characters: the first 4 and the last 2 are visible, the 20 between are masked, in groups of 4.
  */
 export type MaskedIban = string;
 /** Full IBAN: ^TR\d{24}$. In requests, and in the merchant's own profile only. */
@@ -170,20 +169,26 @@ export interface Payment {
 export type PaymentAttemptReason =
   | 'link_not_open'    // the memo names a link that is paid, expired or cancelled
   | 'link_not_found'   // the memo is shaped like a link code, but no link has that code
-  | 'unmatched_memo';  // no memo, or a memo that is not a link code
+  | 'unmatched_memo'   // no memo, or a memo that is not a link code
+  | 'wrong_asset';     // the payer sent XLM or another asset instead of USDC (01-BACKEND.md)
 
 /**
- * A USDC payment to the platform account that did not become a `Payment` because it matched no
- * payable link. Never silently dropped: it creates a PaymentAttempt row and credits
- * `merchant.unallocatedUSDC`.
+ * An inbound payment to the platform account that did not become a `Payment`. Never silently
+ * dropped: every one creates a PaymentAttempt row. What happens to the funds depends on `reason`:
+ * - link_not_open: credited in full to `merchant.unallocatedUSDC` of the link's merchant. This is
+ *   the same event as an `UnallocatedCredit` with source 'stray' — one inbound payment, two rows.
+ * - link_not_found, unmatched_memo, wrong_asset: nothing is credited to any merchant; the funds
+ *   stay in the platform account and are resolved manually.
+ * Internal record: no endpoint returns PaymentAttempt. The merchant sees a link_not_open payment
+ * through GET /unallocated as a 'stray' UnallocatedCredit.
  * Design decision (2026-09-19), described in 00-PROJECT.md §4 and §5.
  */
 export interface PaymentAttempt {
   id: string;
   linkCode: string | null;         // null when the memo is not a link code
-  merchantId: string | null;       // null when no link, hence no merchant, matched. OPEN: whose unallocatedUSDC is credited when this is null is not decided
+  merchantId: string | null;       // null for link_not_found and unmatched_memo: there is no merchant
   txHash: TxHash;
-  amountUSDC: DecimalUSDC;
+  amountUSDC: DecimalUSDC;         // OPEN: for wrong_asset the amount is not USDC; field name and asset column undecided
   reason: PaymentAttemptReason;
   createdAt: IsoTimestamp;
 }
@@ -267,6 +272,10 @@ export interface PayQuote {
   payments: Payment[];
 }
 
+/**
+ * A credit to `merchant.unallocatedUSDC`, as returned by GET /unallocated. A 'stray' credit is the
+ * same event as a `PaymentAttempt` with reason 'link_not_open'; this is the one the API returns.
+ */
 export interface UnallocatedCredit {
   id: string;
   source: 'stray' | 'overpaid';    // stray: payment to a link no longer payable, credited in full · overpaid: the excess on the completing payment

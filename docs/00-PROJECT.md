@@ -1,9 +1,11 @@
 # LiraLink — Project Design and API Contract
 
-> This is the **single source of truth** for the product, data model and API contract.
-> Read it first. The per-app design docs (`01-BACKEND.md`, `02-PAY-WEB.md`, `03-MERCHANT-WEB.md`)
-> and `anchor.md` refine it but never override it. If the API has to change, change it **here
-> first**, then update the app docs.
+> This is the **single source of truth** for the product and the design. For the API contract —
+> every request and response shape — [`api.types.ts`](api.types.ts) is the source of truth; this
+> file restates it and must never contradict it. Read this file first. The per-app design docs
+> (`01-BACKEND.md`, `02-PAY-WEB.md`, `03-MERCHANT-WEB.md`) and `anchor.md` refine it but never
+> override it. If the API has to change, change `api.types.ts` **first**, then this file, then the
+> app docs.
 
 Name: **LiraLink** (slug `liralink` in code). Team: **MersiErOfis**.
 Event: Rise In × Stellar Pro Hackathon, Istanbul, 19–20 Sept 2026, Genesis Track. **Testnet only.**
@@ -76,10 +78,14 @@ Diagram and Soroban storage/auth patterns: [`architecture.md`](architecture.md).
     `shortfallUSDC` track progress.
   - `received > quotedUSDC` → `paid`; the excess is credited to `merchant.unallocatedUSDC`, visible
     in the panel and never auto-converted to TRY.
-  - A payment that arrives for a link that is not payable (`paid`, `expired`, `cancelled`), for a
-    code no link has, or with a memo that is no link code is **never silently dropped**: it creates
-    a `PaymentAttempt` row with the reason (`link_not_open` | `link_not_found` | `unmatched_memo`)
-    and credits `merchant.unallocatedUSDC`.
+  - An inbound payment that does not become a `Payment` is **never silently dropped**: it creates
+    a `PaymentAttempt` row with the reason.
+    - `link_not_open` — the link is `paid`, `expired` or `cancelled`: credited in full to that
+      merchant's `unallocatedUSDC`, and listed on `GET /unallocated` as a `stray` credit (the same
+      event; the API returns the `UnallocatedCredit`, never the `PaymentAttempt`).
+    - `link_not_found` (no link has the code), `unmatched_memo` (no memo, or not a link code),
+      `wrong_asset` (XLM or another asset instead of USDC): **no** merchant is credited; the funds
+      stay in the platform account and are resolved manually.
 
 **Repository layout (monorepo):**
 ```
@@ -117,7 +123,7 @@ type SettleFailReason = 'unexpected_fee_asset' | 'invalid_fee' | 'anchor_status'
 
 interface Merchant {
   id: string; email: string; businessName: string;
-  iban?: string;                  // payout IBAN, ^TR\d{24}$
+  iban?: string;                  // payout IBAN, ^TR\d{24}$ — full: the merchant's own profile, returned only to them
   autoSavePercent: number;        // 0–50, default 0 — share of each payment kept in USDC
   unallocatedUSDC: string;        // 7 dp — overpaid excess + stray payments, minus non-failed USDC withdrawals from it
   settlementMode: SettlementMode; // derived from ANCHOR_PROVIDER
@@ -138,7 +144,7 @@ interface PaymentLink {
   status: LinkStatus;
   expiresAt: string;              // default +24 h
   payUrl: string;                 // PAY_WEB_BASE_URL + '/' + code
-  receivedUSDC: string;           // 7 dp — cumulative USDC matched so far ("0" until the first payment)
+  receivedUSDC: string;           // 7 dp — cumulative USDC matched so far ("0.0000000" until the first payment)
   shortfallUSDC?: string;         // 7 dp — only while status is 'underpaid'
   payment?: Payment;              // latest transfer — alias for payments.at(-1)
   payments: Payment[];            // every transfer that credited this link, oldest → newest
@@ -159,7 +165,7 @@ interface Settlement {
   id: string; merchantId: string; paymentId: string;
   amountUSDC: string; amountTRY: string; fxRate: string;
   savedUSDC: string;              // auto-save portion kept in USDC
-  feeUSDC: string | null;         // anchor fee in USDC, 7 dp — null until completed
+  feeUSDC: string | null;         // anchor fee in USDC, 7 dp — null until completed; "0.0000000" when the anchor charges in TRY
   netTRY: string | null;          // TRY credited (balance) or paid to the IBAN (auto_payout), 2 dp — null until completed
   provider: 'mock' | 'sep6' | 'sep24';
   status: SettleStatus; anchorRef?: string;
@@ -169,7 +175,8 @@ interface Settlement {
 }
 
 interface Withdrawal {             // TRY to IBAN, balance mode only
-  id: string; merchantId: string; amountTRY: string; iban: string;
+  id: string; merchantId: string; amountTRY: string;
+  iban: string;                   // masked, "TR33 **** **** **** **** **** 26" — the request carries the full IBAN
   status: WdStatus; anchorRef?: string; createdAt: string; completedAt?: string;
 }
 
@@ -196,40 +203,48 @@ interface PayQuote {               // what the payer page renders
   receivedUSDC: string; shortfallUSDC?: string;
   rails: {
     contract?: { contractId: string; invoiceCode: string };  // present while the link is on-chain
-    memo?:     { destination: string; memo: string };        // always present
+    memo:      { destination: string; memo: string };        // always present
   };
   asset: { code: 'USDC'; issuer: string };
-  network: 'testnet';
+  network: 'testnet';             // LiraLink's own name; x402 fields use the x402 spec's 'stellar:testnet'
   payment?: Payment;
   payments: Payment[];
 }
 
-type PaymentAttemptReason = 'link_not_open' | 'link_not_found' | 'unmatched_memo';
+type PaymentAttemptReason = 'link_not_open' | 'link_not_found' | 'unmatched_memo' | 'wrong_asset';
 
-interface PaymentAttempt {         // a USDC payment that matched no payable link — never dropped (see §4)
+interface PaymentAttempt {         // an inbound payment that did not become a Payment — never dropped (see §4); internal, no endpoint returns it
   id: string;
   linkCode: string | null;        // null when the memo is not a link code
-  merchantId: string | null;      // null when no link, hence no merchant, matched
+  merchantId: string | null;      // null for link_not_found and unmatched_memo: there is no merchant
   txHash: string;
   amountUSDC: string;             // 7 dp
   reason: PaymentAttemptReason;
   createdAt: string;
 }
 
-interface UnallocatedCredit {
+interface UnallocatedCredit {       // returned by GET /unallocated; a 'stray' credit is the same event as a link_not_open PaymentAttempt
   id: string; source: 'stray' | 'overpaid';
   txHash: string; explorerUrl: string; amountUSDC: string;
   linkCode: string; reason: string; createdAt: string;
 }
 
-interface ApiError { statusCode: number; message: string; error?: string }
+interface ApiError { statusCode: number; message: string | string[]; error?: string } // string[] for 400 validation errors
 ```
 
 ## 6. API contract (v1) — base path `/api`
 
 All bodies are JSON. Timestamps are ISO-8601 UTC. **Money is always a decimal string** (TRY 2 dp,
-USDC 7 dp). Merchant endpoints need `Authorization: Bearer <jwt>`; payer endpoints are public.
-Lists are paginated with `page` and `limit` and return `{ items, total }`, newest first.
+USDC 7 dp, always written out in full: zero USDC is `"0.0000000"`). Merchant endpoints need
+`Authorization: Bearer <jwt>`; payer and system endpoints are public. Lists are paginated with
+`page` (from 1, default 1) and `limit` (default 20, max 100) and return `{ items, total }`, newest
+first.
+
+**IBAN visibility.** A merchant sees their own IBAN in full; nobody else sees it at all. Only the
+merchant's own profile (`Merchant`, from `GET`/`PATCH /me`, register and login) carries the full
+IBAN. Every other response and every log line carries it masked, exactly
+`TR33 **** **** **** **** **** 26` (first 4 and last 2 characters visible, the 20 between masked),
+and nothing the payer can see carries it at all. Requests carry the full IBAN, `^TR\d{24}$`.
 
 ### Auth (merchant)
 | Method | Path | Body → Response |
@@ -254,11 +269,11 @@ Lists are paginated with `page` and `limit` and return `{ items, total }`, newes
 | GET | `/balance` | `Balance` |
 | GET | `/payments?page=&limit=` | `{ items: (Payment & { link: Pick<PaymentLink,'code'\|'title'\|'amountTRY'\|'status'\|'quotedUSDC'\|'receivedUSDC'>, settlement: Settlement \| null })[], total }`. `settlement` is `null` for installments that did not complete the link; `link.*` are current values |
 | GET | `/settlements?page=&limit=` | `{ items: Settlement[], total }` — one per paid link |
-| POST | `/withdrawals` | `{ amountTRY, iban? }` → `201 Withdrawal` (`requested`, amount reserved immediately). `422` if > `availableTRY`; `400` if ≤ 0 or no IBAN in body or profile; `409 "Payouts are automatic in this mode"` when `settlementMode` is `auto_payout` |
+| POST | `/withdrawals` | `{ amountTRY, iban? }` (full IBAN; defaults to the profile IBAN) → `201 Withdrawal` with the IBAN masked (`requested`, amount reserved immediately). `422` if > `availableTRY`; `400` if ≤ 0 or no IBAN in body or profile; `409 "Payouts are automatic in this mode"` when `settlementMode` is `auto_payout` |
 | GET | `/withdrawals?page=&limit=` | `{ items: Withdrawal[], total }` |
 | POST | `/usdc-withdrawals` | `{ amountUSDC, destination, source }` → `201 UsdcWithdrawal`. Debits `source` in the same DB transaction. The payment is signed and stored before submission, so a retry resubmits the same transaction and it can never be sent twice. Usually `completed` (~5 s); `submitted` if Horizon did not confirm in time — a minute job retries until `completed` or `failed` (amount returned). `400` bad amount / address / source; `422` insufficient balance, or `destination` missing, without a USDC trustline, without trustline room, or equal to the platform account |
 | GET | `/usdc-withdrawals?page=&limit=` | `{ items: UsdcWithdrawal[], total }` |
-| GET | `/unallocated?page=&limit=` | `{ items: UnallocatedCredit[], total, summary: { creditedUSDC, withdrawnUSDC, remainingUSDC } }`. `stray` = a payment to a link that is no longer payable, credited in full; `overpaid` = the excess on the completing payment. `remainingUSDC` = `Balance.unallocatedUSDC` |
+| GET | `/unallocated?page=&limit=` | `{ items: UnallocatedCredit[], total, summary: { creditedUSDC, withdrawnUSDC, remainingUSDC } }`. `stray` = a payment to a link that is no longer payable, credited in full (the same event as a `link_not_open` `PaymentAttempt`); `overpaid` = the excess on the completing payment. `remainingUSDC` = `Balance.unallocatedUSDC` |
 
 **Balance rules.**
 - `availableTRY` = Σ `netTRY` of completed **balance-mode** settlements − Σ non-failed withdrawals.
@@ -267,7 +282,8 @@ Lists are paginated with `page` and `limit` and return `{ items, total }`, newes
 - `pendingTRY` = Σ `amountTRY` of pending/processing settlements (gross; the fee is known only on
   completion).
 - `savedUSDC` = Σ `savedUSDC` of non-failed settlements − Σ non-failed USDC withdrawals from `saved`.
-- `unallocatedUSDC` = stored counter: credited by overpaid/stray payments, debited by USDC
+- `unallocatedUSDC` = stored counter: credited by overpaid/stray payments (never by a
+  `link_not_found`, `unmatched_memo` or `wrong_asset` attempt), debited by USDC
   withdrawals from `unallocated` (a failed one gives it back).
 - The bucket a settlement lands in follows the provider it was **created** with.
 - A settlement's gross `amountTRY` = `link.amountTRY` × (100 − `autoSavePercent`)%, keeping
@@ -286,7 +302,8 @@ Lists are paginated with `page` and `limit` and return `{ items, total }`, newes
 
 **`GET /pay/:code/agent` (x402).**
 - Without a `PAYMENT-SIGNATURE` header → `402` with an x402 v2 `PaymentRequired` body and a base64
-  `PAYMENT-REQUIRED` header: `exact` scheme, `stellar:testnet`, the USDC SAC, `amount` = amount due
+  `PAYMENT-REQUIRED` header: `exact` scheme, `stellar:testnet` (the x402 spec's network id —
+  `PayQuote.network` is LiraLink's own `testnet`), the USDC SAC, `amount` = amount due
   in 7-dp base units, `payTo` = platform account. No memo — the URL identifies the link.
 - With a valid header → the facilitator verifies and settles, the API reads the transfer back from
   Horizon and credits it (`Payment.rail = 'x402'`) → `200 { code, linkStatus, rail, network,
@@ -307,7 +324,8 @@ Lists are paginated with `page` and `limit` and return `{ items, total }`, newes
 ### Status codes
 `200/201/202` success · `400` validation · `401` missing/invalid token · `403` wrong
 `currentPassword` · `404` unknown link/code · `409` invalid state transition, or not allowed in this
-settlement mode · `422` business rule (insufficient balance, destination cannot receive USDC).
+settlement mode · `422` business rule (insufficient balance, destination cannot receive USDC) ·
+`503` dependency not configured / down. Every non-2xx body is an `ApiError`.
 
 ## 7. Soroban invoice contract
 
