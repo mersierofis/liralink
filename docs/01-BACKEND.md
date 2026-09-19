@@ -119,7 +119,12 @@ the public key. `/health` exposes it.
   merchant for a new one."
 - **On-chain invoice:** `POST /links` calls `create` on the contract best-effort, with
   `deadline` = the ledger that corresponds to `expiresAt`, so the contract and the API expire the
-  quote at the same moment.
+  quote at the same moment. It is optional and never blocks the memo rail: with
+  `INVOICE_CONTRACT_ID` empty nothing is called; a failed call is logged and the link is 201 with
+  `onchain: null`; and `POST /links` waits at most 4 s — if RPC is slower it answers on the memo rail
+  and the invoice keeps going in the background, filling `onchain` in when it lands. Contract calls
+  are signed by the platform account and run one at a time (no sequence-number races).
+  `POST /links/:id/onchain` is the manual retry; cancel also cancels the invoice, best-effort.
 - **Expiry on read:** every path that returns a link (`GET /links`, `GET /links/:id`, cancel,
   `GET /pay/:code`) first moves the matching `open` links whose `expiresAt` has passed to `expired`,
   in one conditional `UPDATE`. No response ever shows an open link with a lapsed quote. The payment
@@ -178,8 +183,15 @@ the public key. `/health` exposes it.
 
 - Poll `getEvents` for the invoice contract every 5 s, filtered on the `paid` topic, with the cursor
   in `ListenerCursor` (`soroban-invoice:<contractId>`). A redeploy starts a fresh cursor.
-- A `paid` event is credited as a `Payment` with `rail: 'contract'`. The contract moves exactly the
-  invoice amount, so the result is always `paid`.
+- A `paid` event is credited as a `Payment` with `rail: 'contract'` through the same matcher and
+  effects as a memo payment — `payment.detected`, settlement, strays for a link that is no longer
+  open. The contract moves exactly the invoice amount, so on an open link the result is `paid`.
+- **Credited exactly once:** each event has a `ProcessedOperation` row (`soroban:<event id>`), and a
+  transaction that already has a `Payment` is never credited again. The Horizon listener sees the
+  same USDC transfer as an `invoke_host_function` operation and ignores it.
+- `GET /pay/:code` offers `rails.contract` only while paying the invoice is exactly right: the
+  invoice is on the configured contract and the link is `open` with nothing received. An underpaid
+  link is topped up on the memo rail only (the invoice would take the full amount again).
 
 ### x402 rail
 

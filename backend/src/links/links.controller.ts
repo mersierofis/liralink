@@ -4,6 +4,7 @@ import type {
   GetLinkResponse,
   GetLinksResponse,
   PostLinkCancelResponse,
+  PostLinkOnchainResponse,
   PostLinksResponse,
 } from '../contract/api.types';
 import type { Merchant as MerchantRow } from '../generated/prisma/client';
@@ -46,5 +47,13 @@ export class LinksController {
   @ApiOkResponse({ type: PaymentLinkDto })
   cancel(@CurrentMerchant() merchant: MerchantRow, @Param('id') id: string): Promise<PostLinkCancelResponse> {
     return this.links.cancel(merchant, id);
+  }
+
+  /** POST /links/:id/onchain → 200. Retries the on-chain invoice; 409 unless open with nothing received, 503 if no contract or RPC fails. */
+  @Post(':id/onchain')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: PaymentLinkDto })
+  putOnchain(@CurrentMerchant() merchant: MerchantRow, @Param('id') id: string): Promise<PostLinkOnchainResponse> {
+    return this.links.putOnchain(merchant, id);
   }
 }

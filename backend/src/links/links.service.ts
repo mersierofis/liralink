@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { InvoiceContractService } from '../invoice/invoice-contract.service';
 import type { GetLinksQuery, Paginated, PaymentLink, PostLinksRequest } from '../contract/api.types';
 import { AppConfig } from '../config/app-config';
 import type { Merchant as MerchantRow } from '../generated/prisma/client';
@@ -20,6 +21,7 @@ export class LinksService {
     private readonly prisma: PrismaService,
     private readonly fx: FxService,
     private readonly config: AppConfig,
+    private readonly invoices: InvoiceContractService,
   ) {}
 
   /**
@@ -29,6 +31,7 @@ export class LinksService {
    * and when it lapses the link expires.
    * The rate's source, timestamp, mid rate and spread are stored with it for the receipt.
    * No rate, no link: if the rate cannot be fetched this is a 503, never a stale or guessed rate.
+   * The on-chain invoice is best-effort and time-boxed: it never fails or stalls link creation.
    */
   async create(merchant: MerchantRow, body: PostLinksRequest): Promise<PaymentLink> {
     const fx = await this.freshRate();
@@ -58,7 +61,7 @@ export class LinksService {
           },
           include: withPayments,
         });
-        return this.map(row);
+        return this.map(await this.invoices.registerWithin(row));
       } catch (err) {
         // Only the code can collide: retry with a fresh one.
         if (!isUniqueViolation(err) || attempt >= CODE_ATTEMPTS) throw err;
@@ -85,7 +88,10 @@ export class LinksService {
     return this.map(await this.findOwn(merchant, id));
   }
 
-  /** Only an `open` link can be cancelled (409 otherwise). No on-chain invoice exists in this build. */
+  /**
+   * Only an `open` link can be cancelled (409 otherwise). Its on-chain invoice is cancelled too,
+   * best-effort and in the background: the API cancel never waits on or fails with RPC.
+   */
   async cancel(merchant: MerchantRow, id: string): Promise<PaymentLink> {
     const link = await this.findOwn(merchant, id);
     const { count } = await this.prisma.paymentLink.updateMany({
@@ -96,7 +102,29 @@ export class LinksService {
       const current = await this.findOwn(merchant, id);
       throw new ConflictException(`Link is ${current.status}; only an open link can be cancelled`);
     }
-    return this.get(merchant, id);
+    const cancelled = await this.findOwn(merchant, id);
+    void this.invoices.cancelBestEffort(cancelled);
+    return this.map(cancelled);
+  }
+
+  /**
+   * POST /links/:id/onchain: manual retry of the on-chain invoice, with the link's locked
+   * quotedUSDC. 503 if no contract is configured or RPC fails; 409 unless open with nothing
+   * received; unchanged if already on the configured contract.
+   */
+  async putOnchain(merchant: MerchantRow, id: string): Promise<PaymentLink> {
+    const contractId = this.invoices.contractId;
+    if (!contractId) throw new ServiceUnavailableException('The contract rail is off: no invoice contract is configured');
+    const link = await this.findOwn(merchant, id);
+    if (link.onchainContractId === contractId) return this.map(link);
+    if (link.status !== 'open' || !link.receivedUSDC.isZero()) {
+      throw new ConflictException(`Link is ${link.status}; only an open link with nothing received can go on-chain`);
+    }
+    try {
+      return this.map(await this.invoices.register(link));
+    } catch (err) {
+      throw new ServiceUnavailableException(`On-chain invoice failed, the link stays on the memo rail: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /** Public lookup by code (case-insensitive); null if no link has it. */

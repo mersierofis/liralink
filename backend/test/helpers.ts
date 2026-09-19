@@ -8,6 +8,7 @@ import type { FxQuote } from '../src/fx/fx.service';
 import { FxService } from '../src/fx/fx.service';
 import { FxUnavailableError } from '../src/fx/fx.types';
 import { ListenerService } from '../src/listener/listener.service';
+import { INVOICE_CHAIN, type InvoiceChain } from '../src/invoice/invoice-chain';
 import { PAYMENT_SOURCE, type PaymentSource } from '../src/listener/payment-source';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AppConfig } from '../src/config/app-config';
@@ -85,6 +86,8 @@ export interface TestAppOptions {
   env?: Partial<Env>;
   /** Anchor adapters instead of the ones built from config. */
   adapters?: (config: AppConfig) => AnchorAdapter[];
+  /** The invoice contract instead of Soroban RPC (set INVOICE_CONTRACT_ID in `env` to match). */
+  invoiceChain?: InvoiceChain;
 }
 
 export async function createTestApp(source = new FakePaymentSource(), opts: TestAppOptions = {}): Promise<TestApp> {
@@ -100,6 +103,7 @@ export async function createTestApp(source = new FakePaymentSource(), opts: Test
     const make = opts.adapters;
     builder = builder.overrideProvider(ANCHOR_ADAPTERS).useFactory({ factory: (c: AppConfig) => make(c), inject: [AppConfig] });
   }
+  if (opts.invoiceChain) builder = builder.overrideProvider(INVOICE_CHAIN).useValue(opts.invoiceChain);
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<INestApplication<App>>();
   setupApp(app);
