@@ -2,20 +2,20 @@
 
 **Your customer abroad pays in USDC. You get lira in your IBAN.**
 
+## Demo video
+
+https://www.youtube.com/watch?v=BFfT_cMtuvY (2 min 39 s)
+
 ## Try it in 3 minutes
-
-> TODO: finalize once the live deployment is up.
-
-1. Open the merchant panel (see *Live URLs*) and sign in with the demo account below.
-2. Create a link, e.g. "Lemon order #1042", 50.00 TRY, and open its pay URL on your phone.
-3. Connect a testnet wallet (Freighter) holding testnet USDC from faucet.circle.com and pay.
-4. Watch the link flip to **Paid** on the merchant panel and the settlement reach the IBAN.
 
 Demo login (intentional, for judges): `demo@liralink.app` / `RiseInStellar33`
 
-## Demo video
-
-> TODO: link to the demo video.
+1. Sign in at https://merchant.tutorialplatform.com with the demo login above.
+2. Open the demo merchant's pay URL, https://pay.tutorialplatform.com/p/Y82H54DH (or create your
+   own link in the panel and open its pay URL, e.g. on your phone).
+3. Connect a testnet wallet (Freighter) holding testnet USDC from
+   [faucet.circle.com](https://faucet.circle.com) and pay.
+4. Watch the link flip to **Paid** on the merchant panel and the TRY settle to the merchant's IBAN.
 
 ## What it does
 
@@ -52,6 +52,10 @@ Interface and deployment details: [docs/00-PROJECT.md §7](docs/00-PROJECT.md).
 See **[docs/architecture.md](docs/architecture.md)** — system diagram, the three payment rails, and
 the contract's storage, TTL and auth patterns. Design docs start at
 [docs/00-PROJECT.md](docs/00-PROJECT.md).
+
+## User validation
+
+An exporter interview and mentor feedback from the event: **[docs/validation.md](docs/validation.md)**.
 
 ## Stellar integrations used
 
