@@ -1,4 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { WithdrawDialog } from '@/components/WithdrawDialog'
@@ -16,6 +17,7 @@ export default function WithdrawalsPage() {
   const balance = useBalance()
   const withdrawals = useWithdrawals({ limit: 50 })
   const isAutoPayout = merchant?.settlementMode === 'auto_payout'
+  useDocumentTitle(isAutoPayout ? 'Payouts' : 'Withdrawals')
 
   return (
     <div className="space-y-6">

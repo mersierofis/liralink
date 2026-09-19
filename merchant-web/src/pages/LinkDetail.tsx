@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
@@ -29,6 +30,8 @@ export default function LinkDetailPage() {
       return status && POLLING_STATUSES.includes(status) ? 3000 : false
     },
   })
+
+  useDocumentTitle(link?.title ?? 'Link')
 
   const simulatePayment = useSimulatePayment()
   const isMock = import.meta.env.VITE_USE_MOCK === 'true'

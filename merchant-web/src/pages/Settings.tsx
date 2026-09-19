@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
@@ -26,6 +27,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>
 
 export default function SettingsPage() {
+  useDocumentTitle('Settings')
   const { merchant, isLoading } = useAuth()
   const updateMe = useUpdateMe()
 
