@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { Loader2, Mail } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { PrivySession } from '@/components/PrivyEmailButton'
@@ -30,9 +30,17 @@ function PrivyEmailFlowInner({
   const privy = usePrivyPay()
   const { startEmail } = privy
 
+  // Privy's hooks can return new functions on any render. Handing those to the parent re-rendered
+  // it, which re-rendered this flow, which produced new functions again: an infinite loop (React
+  // #185). The parent gets one stable signHash that always calls the latest one, and hears about
+  // the session only when the address changes.
+  const signHashRef = useRef(privy.signHash)
+  signHashRef.current = privy.signHash
+  const signHash = useCallback((hashHex: string) => signHashRef.current(hashHex), [])
+
   useEffect(() => {
-    onSession?.({ address: privy.address, signHash: privy.signHash })
-  }, [privy.address, privy.signHash, onSession])
+    onSession?.({ address: privy.address, signHash })
+  }, [privy.address, signHash, onSession])
 
   // Mounting this chunk *is* the payer picking email sign-in: go straight to the email step.
   useEffect(() => {
