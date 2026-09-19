@@ -46,7 +46,7 @@ export const envSchema = z
     PLATFORM_ACCOUNT_SECRET: str().refine((s) => StrKey.isValidEd25519SecretSeed(s), 'must be an S… secret seed'),
 
     // Soroban invoice contract (empty disables the contract rail)
-    INVOICE_CONTRACT_ID: optStr(),
+    INVOICE_CONTRACT_ID: z.preprocess(blank, z.string().refine((s) => StrKey.isValidContract(s), 'must be a C… contract id').optional()),
 
     // FX. Default: the anchor's SEP-38 price. There is no fallback between providers.
     FX_PROVIDER: z.preprocess(blank, z.enum(['mock', 'live', 'anchor']).default('anchor')),
@@ -101,6 +101,14 @@ export const envSchema = z
   .refine((e) => e.ANCHOR_PROVIDER === 'mock' || e.ANCHOR_HOME_DOMAIN !== undefined, {
     path: ['ANCHOR_HOME_DOMAIN'],
     message: 'required when ANCHOR_PROVIDER is sep6 or sep24',
+  })
+  .refine((e) => e.INVOICE_CONTRACT_ID === undefined || e.SOROBAN_RPC_URL !== undefined, {
+    path: ['SOROBAN_RPC_URL'],
+    message: 'required when INVOICE_CONTRACT_ID is set',
+  })
+  .refine((e) => e.INVOICE_CONTRACT_ID === undefined || e.NETWORK_PASSPHRASE !== undefined, {
+    path: ['NETWORK_PASSPHRASE'],
+    message: 'required when INVOICE_CONTRACT_ID is set',
   })
   .refine((e) => e.FX_PROVIDER !== 'mock' || e.FX_MOCK_RATE_TRY_PER_USDC !== undefined, {
     path: ['FX_MOCK_RATE_TRY_PER_USDC'],

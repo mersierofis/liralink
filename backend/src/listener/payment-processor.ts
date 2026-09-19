@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { AppConfig } from '../config/app-config';
 import { addUSDC, formatUSDC } from '../common/money';
-import type { Prisma } from '../generated/prisma/client';
+import type { PayRail, Prisma } from '../generated/prisma/client';
+import type { PaidEvent } from '../invoice/invoice-contract';
 import { PrismaService } from '../prisma/prisma.service';
 import type { InboundOp } from './inbound-op';
 import { PaymentEvents } from './payment-events';
-import { type Decision, type LinkState, type MatcherConfig, classify, decide } from './matcher';
+import { type Classified, type Decision, type LinkState, type MatcherConfig, classify, decide } from './matcher';
 
 type Tx = Prisma.TransactionClient;
 
@@ -54,7 +55,7 @@ export class PaymentProcessor {
       const code = classified.kind === 'usdc' || classified.kind === 'wrong_asset' ? classified.code : null;
       const link = code ? await this.lockLink(tx, code) : null;
       const decision = decide(classified, link, op.createdAt, this.cfg);
-      const outcome = await this.apply(tx, decision, op);
+      const outcome = await this.apply(tx, decision, op, 'memo');
       if (decision.kind === 'credit' && decision.credit.status === 'paid') completedLinkId = decision.link.id;
 
       // The primary key is the idempotency guard; a concurrent duplicate fails the whole transaction.
@@ -64,6 +65,43 @@ export class PaymentProcessor {
     });
     // Only after commit, so settlement never sees a payment that could still roll back.
     if (completedLinkId) this.events.emitPaymentDetected({ linkId: completedLinkId, txHash: op.txHash });
+    return result;
+  }
+
+  /**
+   * Applies one `paid` event of the invoice contract, through the same matcher and the same effects
+   * as a memo payment (credit, stray, payment.detected → settlement), with `rail: 'contract'`.
+   *
+   * Credited exactly once: the event's ProcessedOperation row (`soroban:<event id>`) makes a replay
+   * a no-op, and a transaction that already has a Payment is never credited again, whichever path
+   * recorded it. The Horizon listener never credits this transfer: Horizon reports it as an
+   * `invoke_host_function` operation, which the matcher ignores.
+   */
+  async processContractPaid(paid: PaidEvent): Promise<ProcessResult> {
+    const opId = `soroban:${paid.eventId}`;
+    let completedLinkId: string | null = null;
+    const result = await this.prisma.$transaction(async (tx) => {
+      if (await tx.processedOperation.findUnique({ where: { opId } })) return { outcome: 'duplicate' };
+      if (await tx.payment.findUnique({ where: { txHash: paid.txHash } })) {
+        await tx.processedOperation.create({ data: { opId, txHash: paid.txHash, outcome: 'duplicate:tx_already_credited' } });
+        return { outcome: 'duplicate' };
+      }
+
+      // Every invoice this API creates pays out to the platform account; anything else is not our money.
+      const classified: Classified =
+        paid.merchant === this.cfg.platformAccount
+          ? { kind: 'usdc', code: paid.code, amount: paid.amountUSDC }
+          : { kind: 'ignore', why: 'contract payout is not the platform account' };
+      const link = classified.kind === 'usdc' ? await this.lockLink(tx, paid.code) : null;
+      const decision = decide(classified, link, paid.paidAt, this.cfg);
+      const op = { opId, txHash: paid.txHash, ledger: paid.ledger, from: paid.payer };
+      const outcome = await this.apply(tx, decision, op, 'contract');
+      if (decision.kind === 'credit' && decision.credit.status === 'paid') completedLinkId = decision.link.id;
+
+      await tx.processedOperation.create({ data: { opId, txHash: paid.txHash, outcome } });
+      return { outcome };
+    });
+    if (completedLinkId) this.events.emitPaymentDetected({ linkId: completedLinkId, txHash: paid.txHash });
     return result;
   }
 
@@ -84,7 +122,7 @@ export class PaymentProcessor {
       : null;
   }
 
-  private async apply(tx: Tx, d: Decision, op: InboundOp): Promise<string> {
+  private async apply(tx: Tx, d: Decision, op: Pick<InboundOp, 'txHash' | 'ledger' | 'from' | 'opId'>, rail: PayRail): Promise<string> {
     switch (d.kind) {
       case 'ignore':
         return `ignored:${d.why}`;
@@ -142,7 +180,7 @@ export class PaymentProcessor {
           await tx.payment.update({ where: { id: existing.id }, data: { amountUSDC: addUSDC(existing.amountUSDC, amount) } });
         } else {
           await tx.payment.create({
-            data: { linkId: link.id, rail: 'memo', txHash: op.txHash, payerAddress: op.from ?? '', amountUSDC: amount, ledger: op.ledger },
+            data: { linkId: link.id, rail, txHash: op.txHash, payerAddress: op.from ?? '', amountUSDC: amount, ledger: op.ledger },
           });
         }
         await tx.paymentLink.update({

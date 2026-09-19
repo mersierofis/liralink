@@ -7,6 +7,7 @@ import type { FxService } from '../fx/fx.service';
 import { FxUnavailableError } from '../fx/fx.types';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { LinkWithPayments } from './link.mapper';
+import { InvoiceContractService } from '../invoice/invoice-contract.service';
 import { LinksService } from './links.service';
 
 /** Quote locking: amountTRY and quotedUSDC are fixed at creation and never follow a later rate. */
@@ -62,7 +63,7 @@ describe('LinksService quote locking', () => {
     },
   } as unknown as PrismaService;
 
-  const service = new LinksService(prisma, fx, config);
+  const service = new LinksService(prisma, fx, config, new InvoiceContractService(prisma, null)); // contract rail off
 
   beforeEach(() => {
     rows.clear();

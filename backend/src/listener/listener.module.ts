@@ -16,6 +16,6 @@ import { HorizonPaymentSource, PAYMENT_SOURCE } from './payment-source';
       useFactory: (config: AppConfig) => new HorizonPaymentSource(config.env.HORIZON_URL, config.platformAccount),
     },
   ],
-  exports: [ListenerService, PaymentEvents],
+  exports: [ListenerService, PaymentEvents, PaymentProcessor],
 })
 export class ListenerModule {}
