@@ -87,6 +87,7 @@ export const handlers: HttpHandler[] = [
     const rate = 34
     const quotedUSDC = (Math.ceil((Number(body.amountTRY) / rate) * 1e7) / 1e7).toFixed(7)
     const hours = body.expiresInHours ?? 24
+    const expiresAt = new Date(Date.now() + hours * 3_600_000).toISOString()
     const newLink: PaymentLink = {
       id: `link-${code}`,
       code,
@@ -99,9 +100,9 @@ export const handlers: HttpHandler[] = [
       fxRate: '34.0000000',
       fxRateAt: new Date().toISOString(),
       fxSpread: '0.0000000',
-      quoteExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      quoteExpiresAt: expiresAt, // never re-quoted: quoteExpiresAt === expiresAt
       status: 'open',
-      expiresAt: new Date(Date.now() + hours * 3_600_000).toISOString(),
+      expiresAt,
       payUrl: `http://localhost:5174/p/${code}`,
       receivedUSDC: '0',
       payments: [],
