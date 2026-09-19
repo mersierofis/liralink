@@ -97,6 +97,8 @@ export const handlers: HttpHandler[] = [
       amountTRY: Number(body.amountTRY).toFixed(2),
       quotedUSDC,
       fxRate: '34.0000000',
+      fxRateAt: new Date().toISOString(),
+      fxSpread: '0.0000000',
       quoteExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
       status: 'open',
       expiresAt: new Date(Date.now() + hours * 3_600_000).toISOString(),

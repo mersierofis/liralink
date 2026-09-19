@@ -100,6 +100,8 @@ function makePaidLink(opts: {
     amountTRY: opts.amountTRY,
     quotedUSDC,
     fxRate: FX_RATE,
+    fxRateAt: isoDaysAgo(opts.daysAgo, 1), // fetched when the link was created
+    fxSpread: '0.0000000', // the mock rate source has no spread
     quoteExpiresAt: isoDaysAgo(opts.daysAgo - 1),
     status: 'paid',
     expiresAt: isoDaysAgo(opts.daysAgo - 1),
@@ -123,6 +125,8 @@ function makeOpenLink(opts: { code: string; title: string; amountTRY: string; da
     amountTRY: opts.amountTRY,
     quotedUSDC,
     fxRate: FX_RATE,
+    fxRateAt: isoDaysAgo(opts.daysAgo),
+    fxSpread: '0.0000000',
     quoteExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
     status: 'open',
     expiresAt: new Date(Date.now() + 24 * 3_600_000).toISOString(),
