@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query'
 
-import { apiRequest } from './client'
+import { HttpError, apiRequest } from './client'
 import type {
   PostAuthLoginResponse,
   Balance,
@@ -10,6 +10,9 @@ import type {
   PaymentLink,
   PaymentWithLink,
   GetUnallocatedResponse,
+  GetUsdcWithdrawalsResponse,
+  PostUsdcWithdrawalsRequest,
+  UsdcWithdrawal,
   Withdrawal,
 } from './types'
 
@@ -162,6 +165,37 @@ export function useCreateWithdrawal() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['withdrawals'] })
       queryClient.invalidateQueries({ queryKey: ['balance'] })
+    },
+  })
+}
+
+/** GET /usdc-withdrawals. Polls every ~10 s only while some row is still 'submitted' (the backend
+ * keeps resubmitting the signed tx until it lands). A 404 means an older backend without the route. */
+export function useUsdcWithdrawals(filters: { page?: number; limit?: number } = {}) {
+  const params = new URLSearchParams()
+  if (filters.page) params.set('page', String(filters.page))
+  if (filters.limit) params.set('limit', String(filters.limit))
+  const qs = params.toString()
+
+  return useQuery({
+    queryKey: ['usdc-withdrawals', filters],
+    queryFn: () => apiRequest<GetUsdcWithdrawalsResponse>(`/usdc-withdrawals${qs ? `?${qs}` : ''}`),
+    retry: (count, err) => !(err instanceof HttpError && err.statusCode === 404) && count < 2,
+    refetchInterval: (query) => (query.state.data?.items.some((w) => w.status === 'submitted') ? 10_000 : false),
+  })
+}
+
+/** POST /usdc-withdrawals — sends USDC from the platform account to the merchant's own wallet.
+ * Returns after ~5 s; the amount leaves its source balance immediately. */
+export function useCreateUsdcWithdrawal() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: PostUsdcWithdrawalsRequest) =>
+      apiRequest<UsdcWithdrawal>('/usdc-withdrawals', { method: 'POST', body }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['usdc-withdrawals'] })
+      queryClient.invalidateQueries({ queryKey: ['balance'] })
+      queryClient.invalidateQueries({ queryKey: ['unallocated'] })
     },
   })
 }

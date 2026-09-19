@@ -3,6 +3,7 @@ import { Decimal } from 'decimal.js'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SendToWalletButton } from '@/components/SendToWalletButton'
 import { Button } from '@/components/ui/button'
 import { UnallocatedSheet } from '@/components/UnallocatedSheet'
 import { formatTRY, formatUSDC, formatUSDCFull } from '@/lib/money'
@@ -63,7 +64,8 @@ export function BalanceCard({
             <p className="font-medium" title={formatUSDCFull(balance.savedUSDC)}>
               {formatUSDC(balance.savedUSDC)}
             </p>
-            <p className="text-xs text-muted-foreground">Held by LiraLink until you request a transfer</p>
+            <p className="text-xs text-muted-foreground">Held by LiraLink — send it to your own wallet any time.</p>
+            <SendToWalletButton source="saved" available={balance.savedUSDC} />
           </div>
         )}
         {unallocatedUSDC.gt(0) && (
@@ -72,9 +74,12 @@ export function BalanceCard({
             <p className="font-medium" title={formatUSDCFull(balance.unallocatedUSDC)}>
               {formatUSDC(balance.unallocatedUSDC)}
             </p>
-            <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setUnallocatedOpen(true)}>
-              View details
-            </Button>
+            <div className="flex gap-3">
+              <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setUnallocatedOpen(true)}>
+                View details
+              </Button>
+              <SendToWalletButton source="unallocated" available={balance.unallocatedUSDC} />
+            </div>
           </div>
         )}
       </CardContent>
