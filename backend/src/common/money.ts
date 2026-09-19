@@ -57,6 +57,28 @@ export function formatSpread(value: MoneyLike): string {
   return format(value, USDC_DP, 'FX spread');
 }
 
+/** a + b as a USDC string (7 dp). Throws if either operand has more than 7 dp: nothing is rounded. */
+export function addUSDC(a: MoneyLike, b: MoneyLike): string {
+  return formatUSDC(parse(formatUSDC(a)).plus(parse(formatUSDC(b))).toFixed());
+}
+
+/** a − b as a USDC string (7 dp). Throws if the result would be negative. */
+export function subtractUSDC(a: MoneyLike, b: MoneyLike): string {
+  const d = parse(formatUSDC(a)).minus(parse(formatUSDC(b)));
+  if (d.isNegative()) throw new Error(`USDC subtraction would go negative: ${d.toFixed()}`);
+  return formatUSDC(d.toFixed());
+}
+
+/** -1, 0 or 1 as a < b, a = b, a > b. */
+export function compareDecimal(a: MoneyLike, b: MoneyLike): -1 | 0 | 1 {
+  return parse(a).comparedTo(parse(b)) as -1 | 0 | 1;
+}
+
+/** True when `a` is a plain decimal string with at most 7 dp (a Horizon amount always is). */
+export function isUSDCAmount(a: unknown): a is string {
+  return typeof a === 'string' && PLAIN_DECIMAL.test(a) && parse(a).decimalPlaces() <= USDC_DP;
+}
+
 /** True when `amountTRY` is a valid link amount: exactly 2 dp, 1.00–1,000,000.00. */
 export function isValidLinkAmountTRY(amountTRY: string): boolean {
   if (!TRY_INPUT.test(amountTRY)) return false;

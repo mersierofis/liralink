@@ -33,8 +33,20 @@
   Jest `moduleNameMapper` that strips the extension.
 - The stellar-sdk CJS build pulls in ESM-only transitive deps (`@noble/*`, `uint8array-extras`);
   Jest's `transformIgnorePatterns` must let ts-jest transform them.
-- E2E boots the real Horizon SSE listener, so e2e runs `--forceExit`, or replaces the listener with
-  a no-op in a dedicated test module.
+- E2E boots the real listener, so the tests replace its Horizon source (`PAYMENT_SOURCE`) with a
+  fake that serves records in the SDK's shape. The real `Horizon.Server` refuses `http://` unless
+  `allowHttp` is set; it is set only for a loopback URL (local Horizon, the tests' `127.0.0.1`), and
+  config rejects any other non-https `HORIZON_URL`.
+- **stellar-sdk rewrites joined records.** With `.join('transactions')` the record's `transaction`
+  is a **function**; the transaction object is in `transaction_attr`, and inside it the linked
+  `ledger` is again a function with the number in `ledger_attr` (observed on testnet, 16.3).
+  Reading `record.transaction.memo_bytes` finds nothing, so every payment looks memo-less. Test
+  fixtures must use the SDK shape, not raw Horizon JSON.
+- **`nest build` twice can ship an empty `dist/`.** `nest build` deletes `dist/` first; with
+  `incremental: true` a leftover `*.tsbuildinfo` tells `tsc` nothing changed, so it emits nothing
+  and the build still "succeeds". A server that builds twice (redeploy, Docker layer reuse) would
+  ship no code at all. `tsconfig.build.json` sets `incremental: false`; don't turn it back on.
+  CI never sees this because it builds from a fresh checkout.
 
 ## Modules
 
@@ -117,27 +129,47 @@ the public key. `/health` exposes it.
 
 ### Memo rail (Horizon)
 
-- Stream `payments().forAccount(platform).join('transactions').cursor(saved ?? 'now')`.
+- Stream `payments().forAccount(platform).join('transactions').cursor(saved)`.
   `.join('transactions')` embeds the memo in every record at no extra HTTP cost — no follow-up
-  `transaction()` call.
+  `transaction()` call. On the very first start there is no saved cursor: the listener takes the
+  newest existing record's paging token and **persists it at once**, so a restart before the first
+  payment still resumes there instead of at a later "now". Every (re)connect first drains
+  everything after the cursor by REST, then opens the stream from where that ended.
 - Accept `payment`, `path_payment_strict_receive` and `path_payment_strict_send`. A payer who swaps
   XLM→USDC in one transaction produces a path payment; filtering on `payment` alone drops real money.
 - **Match** only when all hold: `to` = platform; `asset_type` = `credit_alphanum4` **and**
   `asset_code` = `USDC_CODE` **and** `asset_issuer` = `USDC_ISSUER` (anyone can issue a "USDC");
   `memo_type` = `text` and **`memo_bytes`** (base64) equals the base64 of a link code — never the
-  lossy UTF-8 `memo` field; the link is `open` or `underpaid`.
+  lossy UTF-8 `memo` field; the link is payable. Outgoing payments and failed transactions are
+  skipped (recorded as processed, no attempt).
+- **Payable** is judged by the payment's ledger close time: `underpaid` always (it never expires);
+  `open` before `expiresAt`; `expired` too if the payment was made before `expiresAt` (it was expired
+  on read while the listener lagged); `paid` / `cancelled` never. An `open` link paid after
+  `expiresAt` is expired in the same transaction and the payment is a stray.
 - The matcher is a **pure function** `(operation, link, config) → decision`, unit-tested with
   fixtures: wrong asset, wrong issuer, wrong memo, underpay, overpay, top-up on an `underpaid` link.
 - **Exact-amount policy:** `total = link.receivedUSDC + op.amount`; equal → `paid`; less →
   `underpaid` with `shortfallUSDC`; more → `paid` with the excess credited to
   `merchant.unallocatedUSDC` in the same DB transaction. A payment to a link that is no longer
-  payable is credited in full to `unallocatedUSDC` as `stray`.
-- **Idempotency:** insert `ProcessedOperation(opId)`, the state change and the cursor update in one
-  DB transaction; a unique-constraint violation means "already seen" — reconnects **will** replay.
-- **Resilience:** the SDK does not back off on error (its only reconnect is a silence watchdog), so
-  the listener reconnects with its own exponential backoff. A REST reconciliation poll every ~2 min
-  runs the same matcher over the same cursor range, because SSE can stall without erroring.
-  `/health.listener` reflects the state.
+  payable is credited in full to `unallocatedUSDC` as `stray` (PaymentAttempt `link_not_open` +
+  UnallocatedCredit `stray`). `link_not_found`, `unmatched_memo` and `wrong_asset` create a
+  PaymentAttempt and credit nobody.
+- **Idempotency:** `ProcessedOperation(opId)`, the operation's effects and the cursor move commit in
+  **one** DB transaction; an operation already in `ProcessedOperation` changes nothing — reconnects
+  and the catch-up poll **will** replay. One `Payment` per transaction (unique `txHash`): a second
+  payment operation in the same transaction (same memo, so the same link) adds to that row instead
+  of being dropped. The link row is locked (`FOR UPDATE`) while an operation is applied.
+- **Ordering and failure:** stream and catch-up records go through one serialized queue in
+  paging-token order; the cursor only ever moves forward and only past committed operations. On
+  **any** failure the listener stops at its cursor, closes the stream and reconnects with
+  exponential backoff (1 s → 60 s): a failing operation is retried, never skipped, and nothing after
+  it is applied first. A REST catch-up poll every 2 min covers an SSE stream that stalls without
+  erroring. `/health` reports `listener` (`running` while the stream is connected) and
+  `listenerCursor`.
+- **`payment.detected`** fires once, after commit, when a payment makes a link `paid` — never for
+  underpaid, strays, attempts or replays. It is in-process and at most once: a subscriber that
+  throws is logged and does not undo the payment, so settlement must also have a reconciler that
+  picks up `paid` links without a settlement.
 - `POST /pay/:code/submitted` fetches the tx from Horizon and runs the same matcher immediately.
 - Out of scope: claimable-balance deposits never appear on `/payments` and would need their own
   watcher.

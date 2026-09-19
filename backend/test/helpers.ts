@@ -7,7 +7,42 @@ import { setupApp } from '../src/app.setup';
 import type { FxQuote } from '../src/fx/fx.service';
 import { FxService } from '../src/fx/fx.service';
 import { FxUnavailableError } from '../src/fx/fx.types';
+import { ListenerService } from '../src/listener/listener.service';
+import { PAYMENT_SOURCE, type PaymentSource } from '../src/listener/payment-source';
 import { PrismaService } from '../src/prisma/prisma.service';
+
+/**
+ * Horizon stand-in: a list of records in paging-token order. `page` and `latestPagingToken` read
+ * it like Horizon's REST API; `push` delivers a record over the open "stream".
+ */
+export class FakePaymentSource implements PaymentSource {
+  records: Record<string, unknown>[] = [];
+  pageCalls: string[] = [];
+  streamCursors: string[] = [];
+  private onRecord: ((r: unknown) => void) | null = null;
+
+  async latestPagingToken(): Promise<string | null> {
+    return (this.records.at(-1)?.paging_token as string | undefined) ?? null;
+  }
+  async page(cursor: string, limit: number): Promise<unknown[]> {
+    this.pageCalls.push(cursor);
+    return this.records.filter((r) => BigInt(r.paging_token as string) > BigInt(cursor)).slice(0, limit);
+  }
+  stream(cursor: string, onRecord: (r: unknown) => void): () => void {
+    this.streamCursors.push(cursor);
+    this.onRecord = onRecord;
+    return () => (this.onRecord = null);
+  }
+  /** Adds a record to "Horizon" and delivers it over the stream, if one is open. */
+  push(record: Record<string, unknown>): void {
+    this.records.push(record);
+    this.onRecord?.(record);
+  }
+  /** Delivers a record over the stream again without adding it (an SSE replay). */
+  replay(record: Record<string, unknown>): void {
+    this.onRecord?.(record);
+  }
+}
 
 /** An FX source the test can move, or break, to prove what link creation does with it. */
 export class MovableFx {
@@ -36,25 +71,31 @@ export interface TestApp {
   http: () => ReturnType<typeof request>;
   prisma: PrismaService;
   fx: MovableFx;
+  source: FakePaymentSource;
+  listener: ListenerService;
   close: () => Promise<void>;
 }
 
-export async function createTestApp(): Promise<TestApp> {
+export async function createTestApp(source = new FakePaymentSource()): Promise<TestApp> {
   const fx = new MovableFx();
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(FxService)
     .useValue(fx)
+    .overrideProvider(PAYMENT_SOURCE)
+    .useValue(source)
     .compile();
   const app = moduleRef.createNestApplication<INestApplication<App>>();
   setupApp(app);
   await app.init();
   const prisma = app.get(PrismaService);
-  return { app, http: () => request(app.getHttpServer()), prisma, fx, close: () => app.close() };
+  const listener = app.get(ListenerService);
+  await listener.idle(); // the listener connects on bootstrap
+  return { app, http: () => request(app.getHttpServer()), prisma, fx, source, listener, close: () => app.close() };
 }
 
 export async function resetDb(prisma: PrismaService): Promise<void> {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE "Settlement", "Payment", "PaymentAttempt", "UnallocatedCredit", "Withdrawal", "PaymentLink", "Merchant" CASCADE',
+    'TRUNCATE "Settlement", "Payment", "PaymentAttempt", "UnallocatedCredit", "Withdrawal", "PaymentLink", "Merchant", "ProcessedOperation", "ListenerCursor" CASCADE',
   );
 }
 

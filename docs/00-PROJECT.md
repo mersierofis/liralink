@@ -72,13 +72,16 @@ Diagram and Soroban storage/auth patterns: [`architecture.md`](architecture.md).
   are ledger rows in Postgres. Roadmap: segregated per-merchant accounts, then non-custodial
   per-link withdrawals.
 - **Never re-quoted.** A link's rate is locked at creation and the quote lives exactly as long as
-  the link (`quoteExpiresAt === expiresAt`). When it lapses the link is `expired` and the payer is
-  told to ask the merchant for a new one — never shown a new price.
+  the link (`quoteExpiresAt === expiresAt`). When it lapses an `open` link is `expired` and the
+  payer is told to ask the merchant for a new one — never shown a new price.
+- **An underpaid link never expires.** Only a link with no payments at all (`open`) expires. Once
+  money has arrived the rate is locked, so the remaining shortfall stays payable indefinitely, past
+  `expiresAt`. Expiry is judged by when a payment was made on the ledger, not when it was seen.
 - **Exact-amount policy.** `amountTRY` and `quotedUSDC` are locked when the link is created.
   Settlement always uses `link.amountTRY`, never `receivedUSDC × fxRate`.
   - `received == quotedUSDC` → `paid`.
-  - `received < quotedUSDC` → `underpaid`; the link stays open for a top-up, `receivedUSDC` and
-    `shortfallUSDC` track progress.
+  - `received < quotedUSDC` → `underpaid`; the link stays payable for top-ups indefinitely (it
+    never expires), `receivedUSDC` and `shortfallUSDC` track progress.
   - `received > quotedUSDC` → `paid`; the excess is credited to `merchant.unallocatedUSDC`, visible
     in the panel and never auto-converted to TRY.
   - An inbound payment that does not become a `Payment` is **never silently dropped**: it creates
@@ -150,7 +153,7 @@ interface PaymentLink {
   status: LinkStatus;
   expiresAt: string;              // default +24 h
   payUrl: string;                 // PAY_WEB_BASE_URL + '/' + code
-  receivedUSDC: string;           // 7 dp — cumulative USDC matched so far ("0.0000000" until the first payment)
+  receivedUSDC: string;           // 7 dp — cumulative USDC received ("0.0000000" until the first payment), overpaid excess included
   shortfallUSDC?: string;         // 7 dp — only while status is 'underpaid'
   payment?: Payment;              // latest transfer — alias for payments.at(-1)
   payments: Payment[];            // every transfer that credited this link, oldest → newest
@@ -328,7 +331,7 @@ and nothing the payer can see carries it at all. Requests carry the full IBAN, `
 ### System
 | Method | Path | Response |
 |---|---|---|
-| GET | `/health` | `{ ok, horizon: 'up'\|'down', anchor: 'mock'\|'sep6'\|'sep24', listener: 'running'\|'stopped', platformAccount: 'G…', settlementMode }` |
+| GET | `/health` | `{ ok, horizon: 'up'\|'down', anchor: 'mock'\|'sep6'\|'sep24', listener: 'running'\|'stopped', listenerCursor: string \| null, platformAccount: 'G…', settlementMode }`. `listenerCursor` = Horizon paging token of the last processed operation |
 | GET | `/fx` | `{ pair: 'USDC/TRY', rate, source: 'mock'\|'live'\|'anchor', fetchedAt }` |
 
 ### Status codes
