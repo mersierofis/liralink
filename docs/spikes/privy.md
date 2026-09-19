@@ -1,8 +1,8 @@
-# Spike: Privy × Stellar (email → embedded wallet)
+# Spike: Privy × Stellar (raw_sign proven, email OTP unproven)
 
 **Owner:** Yunus  
 **Date:** 2026-09-19  
-**Status:** **GO** (narrow proof) — second path on pay-web only  
+**Status:** **raw_sign proven** on an **app-owned** server wallet; email OTP and USDC payment **unproven**. Second path on pay-web only.  
 **Kill line:** if the email path is not demo-ready by **01:00 local (2026-09-20)**, remove it from pay-web without discussion. Freighter / Wallets Kit stays.
 
 ## Decision
@@ -13,13 +13,21 @@
 | Secondary path | **Privy** — “No wallet? Sign in with email” |
 | Secrets | **App ID** on pay-web (`VITE_PRIVY_APP_ID`). **App Secret stays on the backend** — never in the frontend, never in this doc. Rotate any secret that was pasted in chat. |
 
-Privy is not the happy path for the projector demo. It is a fallback for a foreign payer who has no Freighter.
+Privy is not the happy path for the projector demo. It is a fallback for a foreign payer who has no Freighter. Do not read this spike as a product **GO** for walletless email payers — only `raw_sign` → Horizon was proven.
 
 ## Question we answered
 
 > Does Privy `raw_sign` over a real Stellar **testnet** `changeTrust` (Circle USDC issuer) produce a signature **Horizon accepts**?
 
 **YES.**
+
+## USDC issuer
+
+Matches `docs/00-PROJECT.md` §4 (Circle testnet USDC, `home_domain: centre.io`):
+
+`GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5`
+
+Horizon operations for the spike tx list the same issuer on the `change_trust` op (verified 2026-09-19).
 
 ## What we tried
 
@@ -56,8 +64,8 @@ Horizon **accepted** the Privy-signed `changeTrust`.
 
 **Proven**
 
-- Privy can custody a Stellar Ed25519 key and `raw_sign` a transaction hash.
-- Horizon testnet accepts that signature on a `changeTrust` envelope.
+- Privy can custody a Stellar Ed25519 key and `raw_sign` a transaction hash (**app-owned** wallet).
+- Horizon testnet accepts that signature on a `changeTrust` envelope for the Circle testnet USDC issuer above.
 
 **Not proven in this spike (follow-ups on pay-web)**
 
@@ -77,4 +85,4 @@ Horizon **accepted** the Privy-signed `changeTrust`.
 - https://docs.privy.io/wallets/overview/chains (Stellar Tier 2)
 - https://docs.privy.io/recipes/use-tier-2 (Stellar raw hash)
 - https://docs.privy.io/api-reference/wallets/raw-sign
-- Local throwaway notes: `/tmp/privy-spike/RESULT.md` (not in repo)
+- `docs/00-PROJECT.md` §4 — USDC issuer
