@@ -1,4 +1,5 @@
 import { Skeleton } from '@/components/ui/skeleton'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { PaymentsTable } from '@/components/PaymentsTable'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
@@ -7,6 +8,7 @@ import { HttpError } from '@/api/client'
 import { useAuth } from '@/auth/AuthProvider'
 
 export default function PaymentsPage() {
+  useDocumentTitle('Payments')
   const { merchant } = useAuth()
   const { data, isLoading, isError, error, refetch } = usePayments({ limit: 50 })
 

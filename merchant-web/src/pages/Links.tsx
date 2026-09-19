@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { toast } from 'sonner'
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -22,6 +23,7 @@ const STATUS_FILTERS: { value: NonNullable<LinksFilter['status']>; label: string
 ]
 
 export default function LinksPage() {
+  useDocumentTitle('Links')
   const [status, setStatus] = useState<NonNullable<LinksFilter['status']>>('all')
   const [qrLink, setQrLink] = useState<PaymentLink | null>(null)
   const [createdLink, setCreatedLink] = useState<PaymentLink | null>(null)

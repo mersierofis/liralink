@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,6 +20,7 @@ import type { PaymentLink } from '@/api/types'
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 export default function DashboardPage() {
+  useDocumentTitle('Dashboard')
   const { merchant } = useAuth()
   const [createdLink, setCreatedLink] = useState<PaymentLink | null>(null)
 
