@@ -1,0 +1,18 @@
+/// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/client" />
+
+interface ImportMetaEnv {
+  readonly VITE_API_URL: string
+  readonly VITE_USE_MOCK: string
+  readonly VITE_HORIZON_URL: string
+  readonly VITE_EXPLORER_TX_URL: string
+  readonly VITE_CONTRACT_RAIL: string
+  /** Secondary path — set true + App ID to show "Sign in with email". Kill by 01:00 if broken. */
+  readonly VITE_PRIVY_ENABLED?: string
+  /** Public Privy App ID only — never put App Secret in VITE_*. */
+  readonly VITE_PRIVY_APP_ID?: string
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv
+}

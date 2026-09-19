@@ -1,0 +1,66 @@
+{
+  "name": "pay-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5174",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "typecheck": "tsc -b --noEmit",
+    "test": "vitest run",
+    "preview": "vite preview --port 5174",
+    "postinstall": "npm --prefix ./packages/invoice-client ci --no-fund --no-audit && npm --prefix ./packages/invoice-client run build"
+  },
+  "dependencies": {
+    "@creit.tech/stellar-wallets-kit": "^1.9.5",
+    "@privy-io/react-auth": "^3.44.0",
+    "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-slot": "^1.3.3",
+    "@stellar/stellar-sdk": "16.3.0",
+    "@tanstack/react-query": "^5.102.8",
+    "buffer": "6.0.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "invoice-client": "file:./packages/invoice-client",
+    "lucide-react": "^1.45.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^6.30.6",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.6.0",
+    "eslint": "^9.13.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.14",
+    "globals": "^15.11.0",
+    "jsdom": "^25.0.1",
+    "msw": "^2.15.0",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "~5.6.2",
+    "typescript-eslint": "^8.11.0",
+    "vite": "^5.4.10",
+    "vite-plugin-pwa": "^0.21.1",
+    "vitest": "^2.1.9"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  },
+  "overrides": {
+    "use-sync-external-store": "1.5.0"
+  },
+  "optionalDependencies": {
+    "utf-8-validate": "5.0.10"
+  }
+}
