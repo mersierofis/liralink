@@ -6,6 +6,8 @@
 
 https://www.youtube.com/watch?v=BFfT_cMtuvY (2 min 39 s)
 
+Pitch deck: [docs/LiraLink-Pitch-MersiErOfis.pdf](docs/LiraLink-Pitch-MersiErOfis.pdf)
+
 ## Try it in 3 minutes
 
 Demo login (intentional, for judges): `demo@liralink.app` / `RiseInStellar33`
