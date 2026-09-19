@@ -127,8 +127,8 @@ export default function SettingsPage() {
                     </FormDescription>
                     {field.value > 0 && (
                       <p className="text-xs text-muted-foreground">
-                        Held by LiraLink until you request a transfer — sending USDC to your own
-                        wallet is coming soon.
+                        Kept as USDC by LiraLink. You can send it to your own Stellar wallet
+                        from the dashboard.
                       </p>
                     )}
                     <FormMessage />

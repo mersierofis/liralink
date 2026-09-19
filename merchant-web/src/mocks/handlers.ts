@@ -167,6 +167,12 @@ export const handlers: HttpHandler[] = [
     return HttpResponse.json({ items, total: items.length })
   }),
 
+  http.get('*/api/usdc-withdrawals', ({ request }) => {
+    const authError = requireAuth(request)
+    if (authError) return authError
+    return HttpResponse.json({ items: [], total: 0 })
+  }),
+
   // Mock merchant has no unallocated credits (unallocatedUSDC is "0.0000000"), so the list is empty.
   http.get('*/api/unallocated', ({ request }) => {
     const authError = requireAuth(request)

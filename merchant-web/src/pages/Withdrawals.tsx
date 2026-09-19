@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { WithdrawDialog } from '@/components/WithdrawDialog'
 import { WithdrawalStatusBadge } from '@/components/WithdrawalStatusBadge'
 import { EmptyState } from '@/components/EmptyState'
+import { UsdcWithdrawalsList } from '@/components/UsdcWithdrawalsList'
 import { ErrorState } from '@/components/ErrorState'
 import { useAuth } from '@/auth/AuthProvider'
 import { useBalance, useWithdrawals } from '@/api/hooks'
@@ -100,6 +101,8 @@ export default function WithdrawalsPage() {
           )}
         </div>
       )}
+
+      <UsdcWithdrawalsList balance={balance.data} />
     </div>
   )
 }
