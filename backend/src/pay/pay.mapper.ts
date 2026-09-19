@@ -1,4 +1,4 @@
-import type { PayQuote } from '../contract/api.types';
+import type { GetPayStatusResponse, PayQuote } from '../contract/api.types';
 import type { AppConfig } from '../config/app-config';
 import { formatRate, formatSpread, formatTRY, formatUSDC } from '../common/money';
 import { type LinkWithPayments, toPayment } from '../links/link.mapper';
@@ -45,4 +45,17 @@ export function contractRail(row: LinkWithPayments, config: AppConfig): { contra
   if (!contractId || row.onchainContractId !== contractId || row.onchainInvoiceCode === null) return null;
   if (row.status !== 'open' || !row.receivedUSDC.isZero()) return null;
   return { contractId, invoiceCode: row.onchainInvoiceCode };
+}
+
+/** What the payer page polls after paying: the link's state and its payments, nothing else. */
+export function toPayStatus(row: LinkWithPayments, config: AppConfig): GetPayStatusResponse {
+  const payments = row.payments.map((p) => toPayment(p, config));
+  const latest = payments.at(-1);
+  return {
+    status: row.status,
+    receivedUSDC: formatUSDC(row.receivedUSDC),
+    ...(row.status === 'underpaid' && row.shortfallUSDC !== null && { shortfallUSDC: formatUSDC(row.shortfallUSDC) }),
+    ...(latest && { payment: latest }),
+    payments,
+  };
 }

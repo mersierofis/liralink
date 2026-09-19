@@ -1,4 +1,5 @@
-import type { LinkStatus, PayQuote } from '../contract/api.types';
+import { Matches } from 'class-validator';
+import type { GetPayStatusResponse, LinkStatus, PayQuote, PostPaySubmittedRequest, PostPaySubmittedResponse } from '../contract/api.types';
 import { PaymentDto } from '../links/links.dto';
 
 class ContractRailDto {
@@ -45,4 +46,24 @@ export class PayQuoteDto implements PayQuote {
   network!: 'testnet';
   payment?: PaymentDto;
   payments!: PaymentDto[];
+}
+
+/** Swagger schema for GET /pay/:code/status. */
+export class PayStatusDto implements GetPayStatusResponse {
+  status!: LinkStatus;
+  receivedUSDC!: string;
+  shortfallUSDC?: string;
+  payment?: PaymentDto;
+  payments!: PaymentDto[];
+}
+
+/** POST /pay/:code/submitted body. */
+export class PaySubmittedDto implements PostPaySubmittedRequest {
+  /** The transaction the payer just submitted: 64 hex characters. */
+  @Matches(/^[0-9a-fA-F]{64}$/, { message: 'txHash must be 64 hex characters' })
+  txHash!: string;
+}
+
+export class PaySubmittedResponseDto implements PostPaySubmittedResponse {
+  accepted!: true;
 }

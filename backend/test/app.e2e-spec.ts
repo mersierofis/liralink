@@ -27,7 +27,7 @@ describe('System (e2e)', () => {
     expect(Object.keys(res.body.paths)).toEqual(
       expect.arrayContaining([
         '/api/auth/register', '/api/auth/login', '/api/me', '/api/links', '/api/links/{id}',
-        '/api/links/{id}/cancel', '/api/pay/{code}', '/api/health',
+        '/api/links/{id}/cancel', '/api/pay/{code}', '/api/pay/{code}/status', '/api/pay/{code}/submitted', '/api/health',
       ]),
     );
     await t.http().get('/docs').expect(200);
