@@ -73,10 +73,12 @@ Ledgers close every ~5 s, so one day ≈ 17,280 ledgers.
 - **Instance:** every write (`__constructor`, `create`, `pay`) calls
   `extend_ttl(threshold = 29 days, extend_to = 30 days)`. Because the threshold sits just below the
   target, the bump is a no-op on most calls and only pays rent roughly once a day of activity.
+  `cancel` does not bump the instance; `get` never writes, so it bumps nothing.
 - **Invoice entries:** on `create`, the entry is extended to live until **`deadline` + 30 days**:
   `extend_to = (deadline − current_ledger) + 30 days`. A pending invoice can therefore never be
   archived before it expires, and stays readable for a month after. On `pay` and `cancel` it is
-  re-extended to **now + 30 days** — the reconciliation window after the final state.
+  re-extended to **now + 30 days** — the reconciliation window after the final state. Invoice
+  bumps pass the same value as threshold and target, so they always take effect.
 - Every value is capped at `env.storage().max_ttl()`, so a far-future deadline cannot make a call
   fail.
 - The API does not rely on archived invoices: the Postgres link row is the durable record, and the
@@ -103,3 +105,9 @@ Design choices behind this:
   written as `Paid` in the same invocation, so a failed transfer reverts everything.
 - **Events are the integration surface:** `created`, `paid`, `cancelled`, with topics
   `[name, code]`, are what the API's `getEvents` poller consumes.
+
+### Live deployment
+
+Testnet contract `CCXHJK4Y667EDKM5H3CXKP26V3LRVOH6NULYS5K6T4BKQADSSFL23BIA`, built from
+`contracts/invoice` (wasm hash `f95d67fe…0950`). Constructor args, deployer and the redeploy
+command: [`00-PROJECT.md` §7](00-PROJECT.md#7-soroban-invoice-contract).
